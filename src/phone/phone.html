@@ -37,11 +37,11 @@
     <option value="1280x720">720p</option>
     <option value="1920x1080" selected>1080p</option>
   </select>
-  <button id="mic">Mic off</button>
+  <button id="mic">Mic on</button>
 </div>
 <div id="start">
   <h1>FreeCast Camera</h1>
-  <p>This phone becomes the face cam. Keep this tab open and the phone on the same Wi-Fi as the PC.</p>
+  <p>This phone becomes the face cam and, if you want it, the microphone. Keep this tab open and the phone on the same Wi-Fi as the PC. Allow both camera and microphone when asked.</p>
   <button id="go">Start camera</button>
   <p id="err"></p>
 </div>
@@ -52,7 +52,7 @@
   const $ = (id) => document.getElementById(id);
   const v = $('v');
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  let stream = null, pc = null, facing = 'user', mic = false, attempt = 0, retry = null, wake = null;
+  let stream = null, pc = null, facing = 'user', mic = true, hasMic = true, attempt = 0, retry = null, wake = null;
 
   function status(cls, text) {
     $('dot').className = cls;
@@ -91,10 +91,20 @@
   async function getMedia() {
     if (stream) stream.getTracks().forEach((t) => t.stop());
     const [w, h] = $('quality').value.split('x').map(Number);
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facing, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 30 } },
-      audio: mic ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false,
-    });
+    // The mic always rides along so the PC can mix it in from its own side;
+    // the Mic button here only mutes it. If mic access is refused, carry on
+    // with video alone.
+    const video = { facingMode: facing, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 30 } };
+    const audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video, audio: hasMic ? audio : false });
+    } catch (err) {
+      if (!hasMic) throw err;
+      hasMic = false;
+      stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    }
+    stream.getAudioTracks().forEach((t) => (t.enabled = mic));
+    paintMic();
     const track = stream.getVideoTracks()[0];
     track.contentHint = 'motion';
     v.srcObject = stream;
@@ -151,9 +161,18 @@
   async function swapTracks() {
     await getMedia();
     if (!pc) return;
-    const track = stream.getVideoTracks()[0];
-    const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-    if (sender) { await sender.replaceTrack(track); tune(); } else connect();
+    const senders = pc.getSenders();
+    for (const track of stream.getTracks()) {
+      const sender = senders.find((s) => s.track && s.track.kind === track.kind);
+      if (!sender) return connect();
+      await sender.replaceTrack(track);
+    }
+    tune();
+  }
+
+  function paintMic() {
+    $('mic').textContent = !hasMic ? 'No mic' : mic ? 'Mic on' : 'Mic muted';
+    $('mic').classList.toggle('on', hasMic && mic);
   }
 
   async function keepAwake() {
@@ -175,11 +194,11 @@
   };
   $('flip').onclick = () => { facing = facing === 'user' ? 'environment' : 'user'; swapTracks().catch(() => {}); };
   $('quality').onchange = () => swapTracks().catch(() => {});
-  $('mic').onclick = async () => {
+  $('mic').onclick = () => {
+    if (!hasMic || !stream) return;
     mic = !mic;
-    $('mic').textContent = mic ? 'Mic on' : 'Mic off';
-    $('mic').classList.toggle('on', mic);
-    try { await getMedia(); connect(); } catch {}
+    stream.getAudioTracks().forEach((t) => (t.enabled = mic));
+    paintMic();
   };
   window.addEventListener('pagehide', () => { navigator.sendBeacon && navigator.sendBeacon(`/api/send?t=${T}`, JSON.stringify({ id: ID, msg: { type: 'bye' } })); });
 })();

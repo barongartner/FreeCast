@@ -17,18 +17,9 @@
   };
   const KIND = { screen: 'Screen', window: 'Window', phone: 'Phone', camera: 'Camera', image: 'Image' };
 
-  function h(tag, props, ...kids) {
-    const el = document.createElement(tag);
-    for (const [k, v] of Object.entries(props || {})) {
-      if (k === 'class') el.className = v;
-      else if (k === 'html') el.innerHTML = v;
-      else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-      else if (v === true) el.setAttribute(k, '');
-      else if (v !== false && v != null) el.setAttribute(k, v);
-    }
-    for (const kid of kids.flat()) if (kid != null) el.append(kid);
-    return el;
-  }
+  const { h, dropdown, swatches, accelFrom } = UI;
+  const isCam = (s) => s.type === 'phone' || s.type === 'camera';
+  const cams = () => Scene.list().filter(isCam);
 
   const fmt = (ms) => {
     const s = Math.floor(ms / 1000);
@@ -90,6 +81,8 @@
   }
   const closeModal = () => {
     $('modal').hidden = true;
+    UI.closeMenus();
+    if (capturingKey) api.suspendHotkeys(false);
     capturingKey = false;
   };
   $('modalClose').onclick = closeModal;
@@ -143,10 +136,10 @@
   function renderList() {
     const sel = Scene.selected();
     const rows = [...Scene.list()].reverse().map((s) => {
-      const btn = (html, title, fn, on) => h('button', { class: 'icon' + (on ? ' on' : ''), title, html, onclick: (e) => { e.stopPropagation(); fn(); } });
+      const btn = (html, _what, fn, on) => h('button', { class: 'icon' + (on ? ' on' : ''), html, onclick: (e) => { e.stopPropagation(); fn(); } });
       return h('div', { class: 'src' + (sel && sel.id === s.id ? ' sel' : '') + (s.visible ? '' : ' off'), onclick: () => Scene.select(s.id) },
         btn(s.visible ? ICON.eye : ICON.eyeOff, 'Show or hide', () => { s.visible = !s.visible; Scene.emit('list'); }, s.visible),
-        h('span', { class: 'src-name', title: s.name }, s.name),
+        h('span', { class: 'src-name' }, s.name),
         h('span', { class: 'src-kind' }, KIND[s.type]),
         btn(ICON.up, 'Bring forward', () => Scene.reorder(s.id, 1)),
         btn(ICON.down, 'Send back', () => Scene.reorder(s.id, -1)));
@@ -156,6 +149,45 @@
 
   // ---------- properties ----------
   let geo = null;
+  let geoCrop = {};
+
+  // A button that listens for the next key combo. While it listens the global
+  // bindings are released so a combo that is already bound can be re-used.
+  function keycap(getKey, setKey) {
+    const btn = h('button', { class: 'keycap', onclick: async () => {
+      if (capturingKey) return;
+      capturingKey = true;
+      await api.suspendHotkeys(true);
+      btn.classList.add('listen');
+      btn.textContent = 'Press keys (Backspace clears)';
+      const onKey = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'Escape') return finish(getKey());
+        if (e.key === 'Backspace') return finish('');
+        const a = accelFrom(e);
+        if (a) finish(a);
+      };
+      const finish = async (value) => {
+        window.removeEventListener('keydown', onKey, true);
+        btn.classList.remove('listen');
+        setKey(value);
+        btn.textContent = value || 'Not set';
+        capturingKey = false;
+        await api.suspendHotkeys(false);
+        await saveHotkeys();
+      };
+      window.addEventListener('keydown', onKey, true);
+    } }, getKey() || 'Not set');
+    return btn;
+  }
+
+  async function saveHotkeys() {
+    const r = await api.setSettings({ hotkeys: settings.hotkeys });
+    $('warn').textContent = r.badHotkeys.length ? 'Could not bind (duplicate or taken by another app): ' + r.badHotkeys.join(', ') : '';
+    renderMarkers();
+  }
+
   function renderProps() {
     const s = Scene.selected();
     geo = null;
@@ -173,10 +205,34 @@
       const input = h('input', { type: 'range', min, max, step, value, oninput: () => { const v = parseFloat(input.value); out.textContent = show(v); fn(v); changed(); } });
       return h('div', { class: 'row' }, input, out);
     };
-    const shape = h('select', { onchange: () => { Scene.setShape(s, shape.value); changed(); renderProps(); } },
-      ['rect', 'round', 'circle'].map((v) => h('option', { value: v, selected: s.shape === v }, { rect: 'Rectangle', round: 'Rounded', circle: 'Circle' }[v])));
+    const shape = dropdown([{ value: 'rect', label: 'Rectangle' }, { value: 'round', label: 'Rounded' }, { value: 'circle', label: 'Circle' }], s.shape,
+      (v) => { Scene.setShape(s, v); changed(); renderProps(); });
     const name = h('input', { type: 'text', value: s.name, oninput: () => { s.name = name.value; renderList(); saveScene(); } });
-    const color = h('input', { type: 'color', value: s.borderColor, oninput: () => { s.borderColor = color.value; changed(); } });
+    const color = swatches(s.borderColor, (c) => { s.borderColor = c; changed(); });
+    const cropping = Scene.cropping() === s.id;
+    const cropBtn = h('button', { class: 'small' + (cropping ? ' active' : ''), onclick: () => Scene.setCropMode(cropping ? null : s.id) }, cropping ? 'Done cropping' : 'Crop on canvas');
+    const aspect = (label, a) => act(label, (x) => Scene.setCropAspect(x, a));
+    const pct = (label, side) => {
+      const input = h('input', { type: 'number', min: 0, max: 95, step: 1, value: Math.round(s.crop[side] * 100), oninput: () => {
+        const other = { l: 'r', r: 'l', t: 'b', b: 't' }[side];
+        const v = Math.max(0, Math.min(0.95 - s.crop[other], (parseFloat(input.value) || 0) / 100));
+        const horiz = side === 'l' || side === 'r';
+        const span = horiz ? s.w / (1 - s.crop.l - s.crop.r) : s.h / (1 - s.crop.t - s.crop.b);
+        s.crop[side] = v;
+        if (horiz) s.w = span * (1 - s.crop.l - s.crop.r);
+        else s.h = span * (1 - s.crop.t - s.crop.b);
+        changed();
+      } });
+      geoCrop[side] = input;
+      return h('label', { class: 'num' }, h('span', {}, label), input);
+    };
+    geoCrop = {};
+    const sourceKey = keycap(() => (settings.hotkeys.sources || {})[s.id] || '', (v) => {
+      const sources = { ...(settings.hotkeys.sources || {}) };
+      if (v) sources[s.id] = v;
+      else delete sources[s.id];
+      settings.hotkeys = { ...settings.hotkeys, sources };
+    });
     const check = (label, key) => {
       const box = h('input', { type: 'checkbox', checked: s[key], onchange: () => { s[key] = box.checked; changed(); } });
       return h('label', { class: 'row' }, box, h('span', {}, label));
@@ -188,15 +244,22 @@
     $('props').replaceChildren(...[
       h('div', { class: 'field' }, h('label', {}, 'Name'), name),
       h('div', { class: 'grid2' }, xl, yl, wl, hl),
-      h('div', { class: 'grid4' }, act('Fit', Scene.fit), act('Fill', Scene.fill), act('Center', Scene.center), act('Uncrop', (x) => { const a = Scene.natural(x); x.crop = { l: 0, t: 0, r: 0, b: 0 }; if (a) x.h = x.w / (a.w / a.h); })),
-      h('div', { class: 'field' }, h('label', {}, 'Snap to'), h('div', { class: 'row' },
-        ['tl', 'tr', 'bl', 'br'].map((p) => act({ tl: 'TL', tr: 'TR', bl: 'BL', br: 'BR' }[p], (x) => Scene.corner(x, p))))),
+      h('div', { class: 'grid4' }, act('Fit', Scene.fit), act('Fill', Scene.fill), act('Center', Scene.center), act('Full size', (x) => { const n = Scene.natural(x); if (n) { x.w = n.w * (1 - x.crop.l - x.crop.r); x.h = n.h * (1 - x.crop.t - x.crop.b); Scene.center(x); } })),
+      h('div', { class: 'field' }, h('label', {}, 'Corner'), h('div', { class: 'row' },
+        ['tl', 'tr', 'bl', 'br'].map((p) => act({ tl: 'TL', tr: 'TR', bl: 'BL', br: 'BR' }[p], (x) => { Scene.corner(x, p); if (isCam(x)) x.cornerPos = p; })))),
+      h('div', { class: 'sep' }),
+      h('div', { class: 'field' }, h('label', {}, 'Crop'), cropBtn),
+      h('div', { class: 'grid5' }, aspect('None', null), aspect('16:9', 16 / 9), aspect('4:3', 4 / 3), aspect('1:1', 1), aspect('9:16', 9 / 16)),
+      h('div', { class: 'grid2' }, pct('L', 'l'), pct('R', 'r'), pct('T', 't'), pct('B', 'b')),
+      h('p', { class: 'hint', style: 'margin:0 2px 8px' }, cropping ? 'Drag the handles or slide the window. Enter when done.' : 'Crop values are percent. Double-click a source to crop it on the canvas.'),
       h('div', { class: 'sep' }),
       h('div', { class: 'field' }, h('label', {}, 'Shape'), shape),
       s.shape === 'round' ? h('div', { class: 'field' }, h('label', {}, 'Radius'), range(0, 200, 1, s.radius, (v) => (s.radius = v))) : null,
-      h('div', { class: 'field' }, h('label', {}, 'Border'), h('div', { class: 'row' }, range(0, 24, 1, s.borderW, (v) => (s.borderW = v)), color)),
+      h('div', { class: 'field' }, h('label', {}, 'Border'), range(0, 24, 1, s.borderW, (v) => (s.borderW = v))),
+      h('div', { class: 'field', style: 'grid-template-columns:1fr' }, color),
       h('div', { class: 'field' }, h('label', {}, 'Opacity'), range(0.1, 1, 0.01, s.opacity, (v) => (s.opacity = v), (v) => Math.round(v * 100))),
       h('div', { class: 'field' }, h('label', {}, 'Options'), h('div', { class: 'row' }, check('Mirror', 'mirror'), check('Lock', 'locked'))),
+      h('div', { class: 'field' }, h('label', {}, 'Show/hide key'), sourceKey),
       h('div', { class: 'sep' }),
       h('div', { class: 'grid2' }, relink, h('button', { class: 'small danger', onclick: () => Scene.remove(s.id) }, 'Remove')),
     ].filter(Boolean));
@@ -206,13 +269,14 @@
     const s = Scene.selected();
     if (!s || !geo) return;
     for (const k of ['x', 'y', 'w', 'h']) if (document.activeElement !== geo[k]) geo[k].value = Math.round(s[k]);
+    for (const k of ['l', 't', 'r', 'b']) if (geoCrop[k] && document.activeElement !== geoCrop[k]) geoCrop[k].value = Math.round(s.crop[k] * 100);
   }
 
   Scene.on((what) => {
-    if (what === 'list') { renderList(); renderProps(); }
-    else if (what === 'select') { renderList(); renderProps(); }
+    if (what === 'list' || what === 'select' || what === 'crop') { renderList(); renderProps(); }
     else if (what === 'change' || what === 'size') syncGeo();
-    if (what !== 'select' && what !== 'media') saveScene();
+    if (what !== 'select' && what !== 'media' && what !== 'crop') saveScene();
+    if (what === 'list') pushStatus();
   });
 
   // ---------- stage sizing ----------
@@ -267,6 +331,27 @@
 
   const saveAudio = () => save({ audio: settings.audio });
 
+  function setMicMuted(muted) {
+    settings.audio.mic.muted = muted;
+    Mixer.setGain('mic', muted ? 0 : settings.audio.mic.gain);
+    saveAudio();
+    renderAudio();
+    pushStatus();
+  }
+  function setDesktopAudio(on) {
+    settings.audio.system.on = on;
+    saveAudio();
+    applySystem();
+    renderAudio();
+  }
+  function setPhoneMic(on) {
+    settings.audio.phone.on = on;
+    saveAudio();
+    applyPhoneAudio();
+    renderAudio();
+    pushStatus();
+  }
+
   async function renderAudio() {
     const a = settings.audio;
     const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput' && d.deviceId !== 'communications' && d.deviceId !== 'default');
@@ -276,7 +361,7 @@
       return h('div', { class: 'meter' }, bar);
     };
     const gain = (key) => {
-      const input = h('input', { type: 'range', min: 0, max: 2, step: 0.01, value: a[key].gain, title: 'Volume', oninput: () => {
+      const input = h('input', { type: 'range', min: 0, max: 2, step: 0.01, value: a[key].gain, oninput: () => {
         a[key].gain = parseFloat(input.value);
         if (key === 'mic') Mixer.setGain('mic', a.mic.muted ? 0 : a.mic.gain);
         else if (key === 'phone') applyPhoneAudio();
@@ -285,11 +370,10 @@
       } });
       return input;
     };
-    const micSel = h('select', { onchange: () => { a.mic.deviceId = micSel.value; saveAudio(); applyMic(); } },
-      h('option', { value: 'default', selected: a.mic.deviceId === 'default' }, 'System default'),
-      h('option', { value: 'none', selected: a.mic.deviceId === 'none' }, 'None'),
-      devices.map((d) => h('option', { value: d.deviceId, selected: a.mic.deviceId === d.deviceId }, d.label || 'Microphone')));
-    const muteBtn = h('button', { class: 'small' + (a.mic.muted ? ' active' : ''), onclick: () => { a.mic.muted = !a.mic.muted; muteBtn.classList.toggle('active', a.mic.muted); muteBtn.textContent = a.mic.muted ? 'Muted' : 'Mute'; Mixer.setGain('mic', a.mic.muted ? 0 : a.mic.gain); saveAudio(); } }, a.mic.muted ? 'Muted' : 'Mute');
+    const micSel = dropdown([{ value: 'default', label: 'System default' }, { value: 'none', label: 'None' },
+      ...devices.map((d) => ({ value: d.deviceId, label: d.label || 'Microphone' }))], a.mic.deviceId,
+      (v) => { a.mic.deviceId = v; saveAudio(); applyMic(); });
+    const muteBtn = h('button', { class: 'small' + (a.mic.muted ? ' active' : ''), onclick: () => setMicMuted(!a.mic.muted) }, a.mic.muted ? 'Muted' : 'Mute');
     const toggle = (key, apply) => {
       const box = h('input', { type: 'checkbox', checked: a[key].on, onchange: () => { a[key].on = box.checked; saveAudio(); apply(); } });
       return box;
@@ -340,6 +424,7 @@
       Mixer.setStream('phone', stream && stream.getAudioTracks().length ? new MediaStream(stream.getAudioTracks()) : null);
       applyPhoneAudio();
     }
+    pushStatus();
   }
   Phone.onChange(updatePhone);
 
@@ -349,14 +434,15 @@
     const img = h('img', { src: info.links[0].qr });
     const code = h('code', {}, info.links[0].url);
     const pick = info.links.length > 1
-      ? h('select', { onchange: () => { const l = info.links[pick.selectedIndex]; img.src = l.qr; code.textContent = l.url; } }, info.links.map((l) => h('option', {}, l.ip)))
+      ? dropdown(info.links.map((l) => l.ip), info.links[0].ip, (ip) => { const l = info.links.find((x) => x.ip === ip); img.src = l.qr; code.textContent = l.url; })
       : null;
     openModal('Connect your phone', h('div', { class: 'phone-box' }, img, h('div', {},
       h('ol', {},
         h('li', {}, 'Put the phone on the same Wi-Fi network as this PC.'),
         h('li', {}, 'Scan the code with the phone camera.'),
         h('li', {}, 'The browser warns about the certificate because FreeCast hosts itself. Choose Show Details, then visit this website.'),
-        h('li', {}, 'Tap Start camera and allow camera access.')),
+        h('li', {}, 'Tap Start camera and allow the camera and the microphone.'),
+        h('li', {}, 'To record the phone mic, tick Phone mic in the Audio panel. It stays in sync with the phone video.')),
       pick ? h('div', { class: 'field' }, h('label', {}, 'Network'), pick) : null,
       code,
       info.error ? h('p', { class: 'hint' }, 'Server problem: ' + info.error) : null,
@@ -390,7 +476,7 @@
       const r = extra.result;
       const count = r.markers ? r.markers.length : 0;
       $('result').replaceChildren(
-        h('span', { class: r.ok ? '' : 'bad', title: r.error || r.file }, r.ok ? `Saved ${r.name}.mp4, ${count} ${count === 1 ? 'marker' : 'markers'}` : `Finalize failed, raw capture kept: ${r.error}`),
+        h('span', { class: r.ok ? '' : 'bad' }, r.ok ? `Saved ${r.name}.mp4, ${count} ${count === 1 ? 'marker' : 'markers'}` : `Finalize failed, raw capture kept: ${r.error}`),
         h('button', { class: 'small', onclick: () => api.showFile(r.file) }, 'Show in folder'));
     }
     renderMarkers();
@@ -403,82 +489,165 @@
 
   const toggleRec = () => Recorder.toggle({ fps: settings.canvas.fps, bitrateMbps: settings.bitrateMbps });
   $('btnRec').onclick = toggleRec;
-  api.onHotkey((key) => {
-    if (capturingKey) return;
-    if (key === 'record') toggleRec();
-    if (key === 'cam') {
-      const cams = Scene.list().filter((s) => s.type === 'phone' || s.type === 'camera');
-      const show = !cams.some((s) => s.visible);
-      cams.forEach((s) => (s.visible = show));
+
+  // ---------- camera layouts ----------
+  // Each cam is in one of three modes: corner (its normal box), full (fills
+  // the canvas, its normal box remembered in s.home) or off (hidden).
+  const camMode = (s) => (!s.visible ? 'off' : s.home ? 'full' : 'corner');
+
+  function setCamMode(mode) {
+    for (const s of cams()) {
+      if (mode === 'full') {
+        if (!s.home) s.home = { x: s.x, y: s.y, w: s.w, h: s.h, crop: { ...s.crop }, shape: s.shape, borderW: s.borderW };
+        s.visible = true;
+        s.shape = 'rect';
+        s.borderW = 0;
+        Scene.fill(s);
+      } else {
+        if (s.home) {
+          Object.assign(s, s.home, { crop: { ...s.home.crop } });
+          delete s.home;
+        }
+        s.visible = mode !== 'off';
+      }
+    }
+    Scene.emit('list');
+    note(mode === 'full' ? 'Cam full screen' : mode === 'off' ? 'Cam off' : 'Cam in corner');
+  }
+
+  function setCamCorner(pos) {
+    for (const s of cams()) {
+      if (s.home) { Object.assign(s, s.home, { crop: { ...s.home.crop } }); delete s.home; }
+      s.visible = true;
+      s.cornerPos = pos;
+      Scene.corner(s, pos);
+    }
+    Scene.emit('list');
+    note('Cam ' + { tl: 'top left', tr: 'top right', bl: 'bottom left', br: 'bottom right' }[pos]);
+  }
+
+  // ---------- monitors ----------
+  async function switchMonitor(pick) {
+    const s = (Scene.selected() && Scene.selected().type === 'screen' && Scene.selected()) || Scene.list().find((x) => x.type === 'screen');
+    if (!s) return note('No screen source');
+    const screens = await api.listScreens();
+    if (!screens.length) return;
+    let i = screens.findIndex((x) => x.id === s.ref.id);
+    if (i < 0) i = screens.findIndex((x) => x.displayId === s.ref.displayId);
+    const next = typeof pick === 'number' ? pick : (Math.max(0, i) + pick.step + screens.length) % screens.length;
+    const target = screens[next];
+    if (!target) return note('No monitor ' + (next + 1));
+    if (target.id !== s.ref.id) {
+      if (s.name === s.ref.name) s.name = target.name;
+      s.ref = { id: target.id, name: target.name, displayId: target.displayId };
+      s.refit = true;
+      await acquire(s, screens);
       Scene.emit('list');
     }
+    note(screens.length > 1 ? 'Recording monitor ' + (next + 1) : 'Only one monitor');
+  }
+
+  // ---------- hotkey actions ----------
+  const ACTIONS = [
+    ['Recording', [
+      ['record', 'Start or stop recording', () => toggleRec()],
+      ['showApp', 'Show or hide the FreeCast window', null],
+    ]],
+    ['Face cam', [
+      ['camCycle', 'Cycle cam: corner, full screen, off', () => setCamMode({ corner: 'full', full: 'off', off: 'corner' }[cams().length ? camMode(cams()[0]) : 'off'])],
+      ['camCornerMode', 'Cam in corner', () => setCamMode('corner')],
+      ['camFull', 'Cam full screen', () => setCamMode('full')],
+      ['camOff', 'Cam off', () => setCamMode('off')],
+      ['cam', 'Show or hide cam', () => setCamMode(cams().some((s) => s.visible) ? 'off' : 'corner')],
+      ['camBig', 'Toggle cam full screen', () => setCamMode(cams().some((s) => s.home) ? 'corner' : 'full')],
+      ['camCorner', 'Move cam to the next corner', () => { const order = ['br', 'bl', 'tl', 'tr']; const c = cams()[0]; setCamCorner(order[(order.indexOf((c && c.cornerPos) || 'br') + 1) % 4]); }],
+      ['camTL', 'Cam to top left', () => setCamCorner('tl')],
+      ['camTR', 'Cam to top right', () => setCamCorner('tr')],
+      ['camBL', 'Cam to bottom left', () => setCamCorner('bl')],
+      ['camBR', 'Cam to bottom right', () => setCamCorner('br')],
+    ]],
+    ['Monitors', [
+      ['nextMonitor', 'Record the next monitor', () => switchMonitor({ step: 1 })],
+      ['prevMonitor', 'Record the previous monitor', () => switchMonitor({ step: -1 })],
+      ['monitor1', 'Record monitor 1', () => switchMonitor(0)],
+      ['monitor2', 'Record monitor 2', () => switchMonitor(1)],
+      ['monitor3', 'Record monitor 3', () => switchMonitor(2)],
+    ]],
+    ['Audio', [
+      ['micMute', 'Mute or unmute the mic', () => { setMicMuted(!settings.audio.mic.muted); note(settings.audio.mic.muted ? 'Mic muted' : 'Mic live'); }],
+      ['desktopMute', 'Desktop audio on or off', () => { setDesktopAudio(!settings.audio.system.on); note(settings.audio.system.on ? 'Desktop audio on' : 'Desktop audio off'); }],
+      ['phoneMic', 'Phone mic on or off', () => { setPhoneMic(!settings.audio.phone.on); note(settings.audio.phone.on ? 'Phone mic on' : 'Phone mic off'); }],
+    ]],
+  ];
+  const ACTION_FN = Object.fromEntries(ACTIONS.flatMap(([, list]) => list.map(([id, , fn]) => [id, fn])));
+
+  function note(text) {
+    api.hudNote(text);
+    pushStatus();
+  }
+
+  // What the status box shows under the timer.
+  function pushStatus() {
+    if (!settings) return;
+    const a = settings.audio;
+    const c = cams()[0];
+    const mics = [!a.mic.muted && a.mic.deviceId !== 'none' && 'Mic', a.phone.on && phoneStream && 'Phone mic'].filter(Boolean);
+    api.hudStatus({
+      mic: mics.length ? mics.join(' + ') : 'Mic muted',
+      micOff: !mics.length,
+      cam: c ? 'Cam ' + camMode(c) : 'No cam',
+    });
+  }
+
+  api.onHotkey((id) => {
+    if (capturingKey) return;
+    if (id.startsWith('source:')) {
+      const s = Scene.get(id.slice(7));
+      if (!s) return;
+      s.visible = !s.visible;
+      Scene.emit('list');
+      return note(s.name + (s.visible ? ' shown' : ' hidden'));
+    }
+    if (ACTION_FN[id]) ACTION_FN[id]();
   });
 
   // ---------- settings ----------
-  function accelFrom(e) {
-    if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return null;
-    let key = null;
-    if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
-    else if (/^Digit\d$/.test(e.code)) key = e.code.slice(5);
-    else if (/^F\d{1,2}$/.test(e.key)) key = e.key;
-    if (!key) return null;
-    const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift'].filter(Boolean);
-    if (!mods.length && !/^F\d/.test(key)) return null;
-    return [...mods, key].join('+');
-  }
-
   function showSettings() {
-    const hk = JSON.parse(JSON.stringify(settings.hotkeys));
+    const hk = settings.hotkeys;
     const field = (label, control) => h('div', { class: 'field' }, h('label', {}, label), control);
-    const keycap = (getKey, setKey) => {
-      const btn = h('button', { class: 'keycap', onclick: () => {
-        capturingKey = true;
-        btn.classList.add('listen');
-        btn.textContent = 'Press the keys...';
-        const onKey = (e) => {
-          e.preventDefault();
-          if (e.key === 'Escape') return finish(getKey());
-          if (e.key === 'Backspace') return finish('');
-          const a = accelFrom(e);
-          if (a) finish(a);
-        };
-        const finish = async (value) => {
-          window.removeEventListener('keydown', onKey, true);
-          capturingKey = false;
-          btn.classList.remove('listen');
-          setKey(value);
-          btn.textContent = value || 'None';
-          const r = await save({ hotkeys: hk });
-          $('warn').textContent = r.badHotkeys.length ? 'Hotkey taken by another app: ' + r.badHotkeys.join(', ') : '';
-          renderMarkers();
-        };
-        window.addEventListener('keydown', onKey, true);
-      } }, getKey() || 'None');
-      return btn;
-    };
     const dir = h('input', { type: 'text', value: settings.outputDir, readonly: true });
     const base = h('input', { type: 'text', value: settings.baseName, oninput: () => save({ baseName: base.value.trim() || 'Recording' }) });
     const sizes = [[1920, 1080], [2560, 1440], [1280, 720], [1920, 1200], [1080, 1920]];
     const cur = `${settings.canvas.w}x${settings.canvas.h}`;
-    const size = h('select', { onchange: () => { const [w, hh] = size.value.split('x').map(Number); Scene.setSize(w, hh); layoutStage(); save({ canvas: { ...settings.canvas, w, h: hh } }); } },
-      sizes.map(([w, hh]) => h('option', { value: `${w}x${hh}`, selected: cur === `${w}x${hh}` }, `${w} x ${hh}`)));
-    const fps = h('select', { onchange: () => { save({ canvas: { ...settings.canvas, fps: +fps.value } }); startTicker(); } },
-      [30, 60].map((v) => h('option', { value: v, selected: settings.canvas.fps === v }, v + ' fps')));
-    const bitrate = h('select', { onchange: () => save({ bitrateMbps: +bitrate.value }) },
-      [6, 8, 12, 16, 24, 40].map((v) => h('option', { value: v, selected: settings.bitrateMbps === v }, v + ' Mbps')));
-    const fin = h('select', { onchange: () => save({ finalize: fin.value }) },
-      h('option', { value: 'cfr', selected: settings.finalize === 'cfr' }, 'Constant frame rate (best for editing)'),
-      h('option', { value: 'fast', selected: settings.finalize === 'fast' }, 'Fast copy (instant, variable frame rate)'));
-    const hide = h('input', { type: 'checkbox', checked: settings.hideFromCapture, onchange: () => save({ hideFromCapture: hide.checked }) });
+    const size = dropdown(sizes.map(([w, hh]) => ({ value: `${w}x${hh}`, label: `${w} x ${hh}` })), cur,
+      (v) => { const [w, hh] = v.split('x').map(Number); Scene.setSize(w, hh); layoutStage(); save({ canvas: { ...settings.canvas, w, h: hh } }); });
+    const fps = dropdown([30, 60].map((v) => ({ value: v, label: v + ' fps' })), settings.canvas.fps,
+      (v) => { save({ canvas: { ...settings.canvas, fps: v } }); startTicker(); });
+    const bitrate = dropdown([6, 8, 12, 16, 24, 40].map((v) => ({ value: v, label: v + ' Mbps' })), settings.bitrateMbps, (v) => save({ bitrateMbps: v }));
+    const fin = dropdown([{ value: 'cfr', label: 'Constant frame rate (best for editing)' }, { value: 'fast', label: 'Fast copy (instant, variable frame rate)' }],
+      settings.finalize, (v) => save({ finalize: v }));
+    const hud = dropdown([{ value: 'always', label: 'Always on screen' }, { value: 'recording', label: 'Only while recording' }, { value: 'off', label: 'Off' }],
+      settings.statusBox, (v) => save({ statusBox: v }));
+    const hudCorner = dropdown([{ value: 'tr', label: 'Top right' }, { value: 'tl', label: 'Top left' }, { value: 'br', label: 'Bottom right' }, { value: 'bl', label: 'Bottom left' }],
+      settings.statusCorner, (v) => save({ statusCorner: v }));
+    const margin = h('input', { type: 'number', min: 0, max: 300, step: 4, value: settings.cornerMargin, oninput: () => { const v = Math.max(0, +margin.value || 0); Scene.setMargin(v); save({ cornerMargin: v }); } });
+    const hide =h('input', { type: 'checkbox', checked: settings.hideFromCapture, onchange: () => save({ hideFromCapture: hide.checked }) });
     const delay = h('input', { type: 'number', min: 0, max: 1000, step: 10, value: settings.audio.mic.delayMs, oninput: () => { settings.audio.mic.delayMs = +delay.value || 0; Mixer.setDelay('mic', settings.audio.mic.delayMs); saveAudio(); } });
     const ns = h('input', { type: 'checkbox', checked: settings.audio.mic.ns, onchange: () => { settings.audio.mic.ns = ns.checked; saveAudio(); applyMic(); } });
 
     const markerRows = hk.markers.map((m, i) => {
-      const label = h('input', { type: 'text', value: m.label, oninput: async () => { m.label = label.value.trim() || 'Marker'; await save({ hotkeys: hk }); renderMarkers(); } });
-      const color = h('select', { onchange: () => { m.color = color.value; save({ hotkeys: hk }); } },
-        ['Red', 'Yellow', 'Green', 'Blue', 'Cyan', 'Pink', 'Purple'].map((c) => h('option', { selected: m.color === c }, c)));
-      return field('Marker ' + (i + 1), h('div', { class: 'row' }, label, color, keycap(() => m.key, (v) => (m.key = v))));
+      const label = h('input', { type: 'text', value: m.label, oninput: () => { m.label = label.value.trim() || 'Marker'; saveHotkeys(); } });
+      const color = dropdown(['Red', 'Yellow', 'Green', 'Blue', 'Cyan', 'Pink', 'Purple'], m.color, (v) => { m.color = v; saveHotkeys(); });
+      const del = h('button', { class: 'icon', onclick: async () => { hk.markers.splice(i, 1); await saveHotkeys(); showSettings(); } }, 'x');
+      return h('div', { class: 'markrow' }, label, color, keycap(() => m.key, (v) => (m.key = v)), del);
     });
+    const addMarker = h('button', { class: 'small', onclick: async () => { hk.markers.push({ label: 'Marker', key: '', color: 'Blue' }); await saveHotkeys(); showSettings(); } }, 'Add a marker type');
+    const actionRows = ACTIONS.flatMap(([group, list]) => [
+      h('h3', {}, group + ' keys'),
+      ...list.map(([id, label]) => h('div', { class: 'keyrow' }, h('label', {}, label), keycap(() => hk[id] || '', (v) => (hk[id] = v)))),
+    ]);
+    const sourceRows = Scene.list().map((s) => h('div', { class: 'keyrow' }, h('label', {}, 'Show or hide ' + s.name),
+      keycap(() => (hk.sources || {})[s.id] || '', (v) => { hk.sources = { ...(hk.sources || {}) }; if (v) hk.sources[s.id] = v; else delete hk.sources[s.id]; })));
 
     openModal('Settings', [
       h('h3', {}, 'Output'),
@@ -487,16 +656,23 @@
       field('Canvas', h('div', { class: 'row' }, size, fps)),
       field('Capture bitrate', bitrate),
       field('Finalize', fin),
-      h('h3', {}, 'Hotkeys (work in any app)'),
-      field('Start or stop', keycap(() => hk.record, (v) => (hk.record = v))),
-      field('Show or hide cam', keycap(() => hk.cam, (v) => (hk.cam = v))),
+      h('p', { class: 'hint' }, 'Every key below works while any other app has focus. Click a key box, press the combo. Function, numpad and navigation keys can be bound on their own; letters and digits need Ctrl, Alt, Shift or Win.'),
+      ...actionRows,
+      h('h3', {}, 'Marker keys (active while recording)'),
       ...markerRows,
-      h('p', { class: 'hint' }, 'Marker keys are only active while recording. Backspace clears a hotkey.'),
+      addMarker,
+      sourceRows.length ? h('h3', {}, 'Source keys') : null,
+      ...sourceRows,
+      h('h3', {}, 'Status box'),
+      field('Show', hud),
+      field('Home corner', hudCorner),
+      h('p', { class: 'hint' }, 'The status box sits on your monitor, never in the video, and jumps out of the way when the mouse reaches it.'),
       h('h3', {}, 'Other'),
+      field('Corner margin (px)', h('div', { class: 'row' }, margin, h('span', { class: 'hint', style: 'margin:0' }, 'Gap the corner buttons and keys leave'))),
       field('Hide FreeCast', h('label', { class: 'row' }, hide, h('span', {}, 'Keep this window out of the recording'))),
       field('Mic delay (ms)', h('div', { class: 'row' }, delay, h('span', { class: 'hint', style: 'margin:0' }, 'Raise it if your voice leads your lips'))),
       field('Mic cleanup', h('label', { class: 'row' }, ns, h('span', {}, 'Noise suppression'))),
-    ], 'settings');
+    ].filter(Boolean), 'settings');
   }
   $('btnSettings').onclick = showSettings;
 
@@ -521,10 +697,11 @@
   }
 
   // ---------- boot ----------
+  Scene.setMargin(settings.cornerMargin);
   Scene.setSize(settings.canvas.w, settings.canvas.h);
   layoutStage();
   startTicker();
-  if (settings.badHotkeys.length) $('warn').textContent = 'Hotkey taken by another app: ' + settings.badHotkeys.join(', ');
+  if (settings.badHotkeys.length) $('warn').textContent = 'Could not bind (duplicate or taken by another app): ' + settings.badHotkeys.join(', ');
 
   const list = await api.listSources();
   if (settings.scene && settings.scene.length) {
@@ -545,6 +722,7 @@
   await applySystem();
   applyPhoneAudio();
   await renderAudio();
+  pushStatus();
 
   // ---------- selftest ----------
   if (settings.selftest) {
@@ -558,6 +736,30 @@
     cam.borderW = 6;
     Scene.select(null);
     Scene.select(cam.id);
+    // UI states that the recording itself cannot show.
+    cam.type = 'camera';
+    cam.crop = { l: 0.2, t: 0.1, r: 0.3, b: 0.25 };
+    Scene.setCropMode(cam.id);
+    await sleep(300);
+    await api.selftest('shot', 'Crop.png');
+    Scene.setCropMode(null);
+    Scene.setShape(cam, 'circle');
+    Scene.corner(cam, 'br');
+    setCamMode('full');
+    await sleep(300);
+    await api.selftest('shot', 'Cam Full.png');
+    setCamMode('corner');
+    showSettings();
+    await sleep(200);
+    document.querySelector('#modalBody .select').click();
+    await sleep(200);
+    await api.selftest('shot', 'Settings.png');
+    $('modalBody').scrollTop = 520;
+    UI.closeMenus();
+    await sleep(200);
+    await api.selftest('shot', 'Settings Keys.png');
+    closeModal();
+    await api.selftest('hudshot', 'Status Box.png');
     afterState = (state, extra) => {
       if (state === 'idle' && (extra.result || extra.error)) api.selftest('done', extra.result || extra);
     };

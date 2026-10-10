@@ -34,16 +34,33 @@ Allow it on private networks or the phone cannot reach the page.
 
 ## Hotkeys
 
-All of them work while another app has focus. Change them in Settings.
+All of them work while another app has focus, and every one can be rebound or cleared in
+Settings. Most actions ship unbound; these are the defaults.
 
 | Action | Default |
 |---|---|
 | Start or stop recording | Ctrl+Alt+R |
+| Cycle cam: corner, full screen, off | Ctrl+Alt+V |
 | Show or hide the face cam | Ctrl+Alt+C |
+| Record the next monitor | Ctrl+Alt+N |
+| Mute or unmute the mic | Ctrl+Alt+M |
 | Mark Cut | Ctrl+Alt+X |
 | Mark Fix | Ctrl+Alt+F |
 
-Marker keys are only held while a recording is running.
+Also bindable: cam to a specific corner or the next one, cam full screen, cam off, a specific
+monitor, desktop audio, phone mic, show or hide the app window, show or hide any single source,
+and as many marker types as you add. Marker keys are only held while a recording is running.
+
+## Cropping
+
+Double-click a source, or press Crop on canvas in Properties. The whole source shows dimmed;
+drag the handles of the crop window or slide it around, Enter when done. Properties also has
+aspect presets and percent fields.
+
+## Status box
+
+A small box on your monitor shows Ready or the running time, the marker count, mic state and
+cam mode. It is excluded from capture, and it jumps aside when the mouse reaches it.
 
 ## Output
 

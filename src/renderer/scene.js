@@ -10,11 +10,12 @@ const Scene = (() => {
   const media = new Map(); // source id -> { el, stream, own }
   const listeners = new Set();
   const MIN = 24;
-  const MARGIN = 40;
+  let MARGIN = 0; // gap the corner buttons leave; set from Settings
   let sources = [];
   let selId = null;
   let guides = [];
   let drag = null;
+  let cropId = null;
   let uid = 0;
 
   const W = () => canvas.width;
@@ -74,9 +75,12 @@ const Scene = (() => {
     s.y = (H() - s.h) / 2;
   }
 
+  // Sources too big to sit inside the margin go flush against the edge.
   function corner(s, pos) {
-    s.x = pos.includes('l') ? MARGIN : W() - s.w - MARGIN;
-    s.y = pos.includes('t') ? MARGIN : H() - s.h - MARGIN;
+    const mx = s.w > W() - MARGIN * 2 ? 0 : MARGIN;
+    const my = s.h > H() - MARGIN * 2 ? 0 : MARGIN;
+    s.x = pos.includes('l') ? mx : W() - s.w - mx;
+    s.y = pos.includes('t') ? my : H() - s.h - my;
   }
 
   function fit(s) {
@@ -160,13 +164,49 @@ const Scene = (() => {
         place(s);
       }
     } else if (Math.abs(prev.w / prev.h - n.w / n.h) > 0.01) {
-      if (s.shape === 'circle') coverCrop(s);
+      if (s.refit) place(s); // switched to a monitor with a different shape
+      else if (s.shape === 'circle') coverCrop(s);
       else {
         s.crop = { l: 0, t: 0, r: 0, b: 0 };
         s.h = s.w / (n.w / n.h);
       }
     }
+    delete s.refit;
     emit('change');
+  }
+
+  // Crop the source to a given aspect (null clears the crop), keeping its
+  // on-canvas scale and centre.
+  function setCropAspect(s, aspect) {
+    const n = natural(s) || s.nat;
+    if (!n) return;
+    const k = s.w / (n.w * (1 - s.crop.l - s.crop.r)); // canvas px per source px
+    const cx = s.x + s.w / 2;
+    const cy = s.y + s.h / 2;
+    const c = { l: 0, t: 0, r: 0, b: 0 };
+    const src = n.w / n.h;
+    if (aspect && src > aspect) c.l = c.r = (1 - aspect / src) / 2;
+    else if (aspect) c.t = c.b = (1 - src / aspect) / 2;
+    s.crop = c;
+    s.w = n.w * (1 - c.l - c.r) * k;
+    s.h = n.h * (1 - c.t - c.b) * k;
+    s.x = cx - s.w / 2;
+    s.y = cy - s.h / 2;
+  }
+
+  // Where the whole uncropped source would sit on the canvas.
+  function extents(s, box = s) {
+    const kx = box.w / (1 - box.crop.l - box.crop.r);
+    const ky = box.h / (1 - box.crop.t - box.crop.b);
+    const left = s.mirror ? box.crop.r : box.crop.l;
+    return { x: box.x - left * kx, y: box.y - box.crop.t * ky, w: kx, h: ky };
+  }
+
+  function setCropMode(id) {
+    const s = id && get(id);
+    cropId = s && natural(s) ? id : null;
+    if (cropId) selId = cropId;
+    emit('crop');
   }
 
   function detach(id) {
@@ -210,6 +250,7 @@ const Scene = (() => {
     detach(id);
     sources = sources.filter((s) => s.id !== id);
     if (selId === id) selId = null;
+    if (cropId === id) cropId = null;
     emit('list');
   }
 
@@ -223,6 +264,7 @@ const Scene = (() => {
 
   function select(id) {
     if (selId === id) return;
+    if (cropId && cropId !== id) cropId = null;
     selId = id;
     emit('select');
   }
@@ -315,14 +357,40 @@ const Scene = (() => {
     }
     const s = selected();
     if (!s) return;
+    const cropping = cropId === s.id && natural(s);
+    const color = cropping ? '#ffb020' : '#ff4a3d';
+    if (cropping) {
+      // Ghost of the whole source, so you can see what the crop is hiding.
+      const f = extents(s);
+      const el = media.get(s.id).el;
+      octx.save();
+      octx.fillStyle = '#000000a6';
+      octx.fillRect(0, 0, W(), H());
+      octx.globalAlpha = 0.45;
+      if (s.mirror) {
+        octx.translate(f.x + f.w, f.y);
+        octx.scale(-1, 1);
+        octx.drawImage(el, 0, 0, f.w, f.h);
+      } else {
+        octx.drawImage(el, f.x, f.y, f.w, f.h);
+      }
+      octx.restore();
+      octx.clearRect(s.x, s.y, s.w, s.h);
+      octx.save();
+      octx.setLineDash([6 * k, 6 * k]);
+      octx.lineWidth = 1 * k;
+      octx.strokeStyle = '#ffffff80';
+      octx.strokeRect(f.x, f.y, f.w, f.h);
+      octx.restore();
+    }
     octx.lineWidth = 1.5 * k;
-    octx.strokeStyle = '#ff4a3d';
+    octx.strokeStyle = color;
     octx.strokeRect(s.x, s.y, s.w, s.h);
     if (s.locked) return;
     const r = 5 * k;
     for (const [, fx, fy] of HANDLES) {
       octx.fillStyle = '#fff';
-      octx.strokeStyle = '#ff4a3d';
+      octx.strokeStyle = color;
       octx.beginPath();
       octx.rect(s.x + s.w * fx - r, s.y + s.h * fy - r, r * 2, r * 2);
       octx.fill();
@@ -353,29 +421,77 @@ const Scene = (() => {
     return null;
   }
 
+  // Snap lines: the canvas edges, centre and margin, plus the edges, centre
+  // and inner margin of every other visible source.
+  function snapLines(self) {
+    const xs = [0, W() / 2, W(), MARGIN, W() - MARGIN];
+    const ys = [0, H() / 2, H(), MARGIN, H() - MARGIN];
+    for (const o of sources) {
+      if (o === self || !o.visible) continue;
+      xs.push(o.x, o.x + o.w / 2, o.x + o.w, o.x + MARGIN, o.x + o.w - MARGIN);
+      ys.push(o.y, o.y + o.h / 2, o.y + o.h, o.y + MARGIN, o.y + o.h - MARGIN);
+    }
+    return { x: xs, y: ys };
+  }
+
+  // Nearest snap line to any of the given positions, or null if none is close.
+  function nearest(lines, positions) {
+    const t = 8 * scale();
+    let best = null;
+    for (const pos of positions) {
+      for (const line of lines) {
+        const d = Math.abs(pos - line);
+        if (d <= t && (!best || d < best.d)) best = { d, line, shift: line - pos };
+      }
+    }
+    return best;
+  }
+
   function moveTo(s, p, free) {
     let x = drag.o.x + (p.x - drag.p.x);
     let y = drag.o.y + (p.y - drag.p.y);
     guides = [];
     if (!free) {
-      const t = 8 * scale();
-      const snap = (v, size, total, axis) => {
-        for (const [edge, target] of [[0, 0], [size / 2, total / 2], [size, total], [0, MARGIN], [size, total - MARGIN]]) {
-          if (Math.abs(v + edge - target) <= t) {
-            guides.push({ [axis]: target });
-            return target - edge;
-          }
-        }
-        return v;
-      };
-      x = snap(x, s.w, W(), 'x');
-      y = snap(y, s.h, H(), 'y');
+      const lines = snapLines(s);
+      const sx = nearest(lines.x, [x, x + s.w / 2, x + s.w]);
+      const sy = nearest(lines.y, [y, y + s.h / 2, y + s.h]);
+      if (sx) { x += sx.shift; guides.push({ x: sx.line }); }
+      if (sy) { y += sy.shift; guides.push({ y: sy.line }); }
     }
     s.x = Math.round(x);
     s.y = Math.round(y);
   }
 
-  function resizeCorner(s, p, free) {
+  // Crop mode: handles move the crop window over a source that stays put,
+  // dragging inside the window slides it around.
+  function cropDrag(s, p) {
+    const o = drag.o;
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    const f = extents(s, o);
+    const fr = f.x + f.w;
+    const fb = f.y + f.h;
+    let l = o.x, t = o.y, r = o.x + o.w, b = o.y + o.h;
+    if (!drag.handle) {
+      const dx = clamp(p.x - drag.p.x, f.x - l, fr - r);
+      const dy = clamp(p.y - drag.p.y, f.y - t, fb - b);
+      l += dx; r += dx; t += dy; b += dy;
+    } else {
+      const h = drag.handle;
+      if (h.includes('w')) l = clamp(p.x, f.x, r - MIN);
+      if (h.includes('e')) r = clamp(p.x, l + MIN, fr);
+      if (h.includes('n')) t = clamp(p.y, f.y, b - MIN);
+      if (h.includes('s')) b = clamp(p.y, t + MIN, fb);
+    }
+    s.x = l; s.y = t; s.w = r - l; s.h = b - t;
+    const left = Math.max(0, (l - f.x) / f.w);
+    const rightCrop = Math.max(0, (fr - r) / f.w);
+    s.crop.t = Math.max(0, (t - f.y) / f.h);
+    s.crop.b = Math.max(0, (fb - b) / f.h);
+    s.crop.l = s.mirror ? rightCrop : left;
+    s.crop.r = s.mirror ? left : rightCrop;
+  }
+
+  function resizeCorner(s, p, free, ctrl) {
     const o = drag.o;
     const right = drag.handle.includes('e');
     const bottom = drag.handle.includes('s');
@@ -383,10 +499,27 @@ const Scene = (() => {
     const ay = bottom ? o.y : o.y + o.h;
     let w = Math.max(MIN, right ? p.x - ax : ax - p.x);
     let h = Math.max(MIN, bottom ? p.y - ay : ay - p.y);
+    const a = o.w / o.h;
     if (!free) {
-      const a = o.w / o.h;
       if (w / a > h) h = w / a;
       else w = h * a;
+    }
+    guides = [];
+    if (!ctrl) {
+      // Snap the edge being dragged; with the aspect locked the other follows.
+      const lines = snapLines(s);
+      const sx = nearest(lines.x, [right ? ax + w : ax - w]);
+      const sy = nearest(lines.y, [bottom ? ay + h : ay - h]);
+      if (sx && (free || !sy || sx.d <= sy.d)) {
+        w = Math.max(MIN, Math.abs(sx.line - ax));
+        if (!free) h = w / a;
+        guides.push({ x: sx.line });
+      }
+      if (sy && (free || !sx || sy.d < sx.d)) {
+        h = Math.max(MIN, Math.abs(sy.line - ay));
+        if (!free) w = h * a;
+        guides.push({ y: sy.line });
+      }
     }
     s.w = Math.round(w);
     s.h = Math.round(h);
@@ -425,13 +558,19 @@ const Scene = (() => {
     const p = point(e);
     let handle = handleAt(p);
     let s = selected();
-    if (!handle) {
+    if (cropId && !handle && !(s && p.x >= s.x && p.x <= s.x + s.w && p.y >= s.y && p.y <= s.y + s.h)) setCropMode(null);
+    if (!handle && !cropId) {
       s = hit(p);
       select(s ? s.id : null);
     }
     if (!s || s.locked) return;
-    drag = { handle, p, o: { x: s.x, y: s.y, w: s.w, h: s.h, crop: { ...s.crop } } };
+    drag = { handle, p, crop: !!cropId, o: { x: s.x, y: s.y, w: s.w, h: s.h, crop: { ...s.crop } } };
     overlay.setPointerCapture(e.pointerId);
+  });
+
+  overlay.addEventListener('dblclick', (e) => {
+    const s = hit(point(e));
+    if (s && !s.locked) setCropMode(cropId === s.id ? null : s.id);
   });
 
   overlay.addEventListener('pointermove', (e) => {
@@ -442,8 +581,9 @@ const Scene = (() => {
       overlay.style.cursor = h ? CURSOR[h] : hit(p) ? 'move' : 'default';
       return;
     }
-    if (!drag.handle) moveTo(s, p, e.ctrlKey);
-    else if (drag.handle.length === 2) resizeCorner(s, p, e.shiftKey);
+    if (drag.crop) cropDrag(s, p);
+    else if (!drag.handle) moveTo(s, p, e.ctrlKey);
+    else if (drag.handle.length === 2) resizeCorner(s, p, e.shiftKey, e.ctrlKey);
     else cropEdge(s, p);
     emit('change');
   });
@@ -467,6 +607,8 @@ const Scene = (() => {
       s.y += moves[e.key][1];
       emit('change');
       e.preventDefault();
+    } else if (cropId && (e.key === 'Enter' || e.key === 'Escape')) {
+      setCropMode(null);
     } else if (e.key === 'Delete') {
       remove(s.id);
     } else if (e.key === 'Escape') {
@@ -510,7 +652,9 @@ const Scene = (() => {
     serialize: () => sources.map((s) => ({ ...s, crop: { ...s.crop } })),
     attachStream, attachImage, detach, ready, natural,
     hasMedia: (id) => media.has(id),
-    fit, fill, center, corner, setShape, coverCrop,
+    fit, fill, center, corner, setShape, coverCrop, setCropAspect,
+    setCropMode, cropping: () => cropId,
+    setMargin: (v) => { MARGIN = v; },
     draw, drawOverlay, setSize,
     size: () => ({ w: W(), h: H() }),
   };

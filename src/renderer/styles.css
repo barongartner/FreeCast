@@ -121,5 +121,22 @@ button.danger:hover { border-color: var(--accent); color: var(--accent); }
 .settings .field { grid-template-columns: 150px 1fr; }
 .settings h3 { margin: 18px 0 10px; font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--dim); }
 .settings h3:first-child { margin-top: 0; }
+.select { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 9px; background: #111114; text-align: left; min-width: 0; }
+.select span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.caret { flex: none; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid var(--dim); }
+.menu.drop { position: fixed; right: auto; top: 0; z-index: 60; width: auto; overflow: auto; }
+.menu.drop button { white-space: nowrap; }
+.menu.drop button.active { color: var(--accent); }
+.color { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.swatches { display: flex; gap: 4px; flex: none !important; }
+.swatch { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid #55555e; }
+.swatch.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+input.hex { width: 74px; flex: none !important; height: 26px; font-size: 12px; }
+.grid5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 8px; }
+.grid5 button, .grid4 button { padding: 0; }
+.keyrow { display: grid; grid-template-columns: 1fr 190px; align-items: center; gap: 8px; margin-bottom: 6px; }
+.keyrow > label { color: #d6d6dc; }
+.markrow { display: grid; grid-template-columns: 1fr 96px 190px 30px; gap: 6px; margin-bottom: 6px; }
+.markrow .icon { height: 30px; width: 30px; border: 1px solid var(--line); }
 .keycap { text-align: left; }
 .keycap.listen { border-color: var(--accent); color: var(--accent); }

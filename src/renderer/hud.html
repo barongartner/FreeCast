@@ -4,18 +4,23 @@
 <meta charset="utf-8">
 <style>
   html, body { margin: 0; height: 100%; background: #141416; color: #f2f2f3; font: 600 13px "Segoe UI", sans-serif; overflow: hidden; }
-  body { display: flex; align-items: center; gap: 9px; padding: 0 12px; box-sizing: border-box; border: 1px solid #2a2a30; }
-  #dot { width: 10px; height: 10px; border-radius: 50%; background: #ff4a3d; animation: blink 1.2s steps(2, start) infinite; }
+  body { display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 12px; box-sizing: border-box; border: 1px solid #2a2a30; }
+  .line { display: flex; align-items: center; gap: 9px; white-space: nowrap; overflow: hidden; }
+  #dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #5a5a63; }
+  body.rec #dot { background: #ff4a3d; animation: blink 1.2s steps(2, start) infinite; }
   #time { font-variant-numeric: tabular-nums; }
-  #note { margin-left: auto; color: #9a9aa3; font-weight: 500; white-space: nowrap; }
+  #note { margin-left: auto; color: #9a9aa3; font-weight: 500; }
+  #sub { color: #9a9aa3; font-weight: 500; font-size: 12px; gap: 14px; }
+  #mic.off { color: #ff8a80; }
   body.flash { background: #ff4a3d; }
-  body.flash #note, body.flash #dot { color: #fff; background-color: #fff; }
-  body.flash #note { background: none; }
+  body.flash #note, body.flash #sub, body.flash #mic.off { color: #fff; }
+  body.flash #dot { background: #fff; }
   @keyframes blink { to { visibility: hidden; } }
 </style>
 </head>
 <body>
-<span id="dot"></span><span id="time">0:00</span><span id="note">0 markers</span>
+<div class="line"><span id="dot"></span><span id="time">Ready</span><span id="note"></span></div>
+<div class="line" id="sub"><span id="mic"></span><span id="cam"></span></div>
 <script>
   let t0 = 0, timer = null, flashTimer = null;
   const time = document.getElementById('time'), note = document.getElementById('note');
@@ -27,12 +32,29 @@
   window.api.onHud((m) => {
     if (m.type === 'start') {
       t0 = m.t0;
-      note.textContent = '0 markers';
+      note.textContent = note.dataset.rest = '0 markers';
+      document.body.classList.add('rec');
+      time.textContent = '0:00';
       clearInterval(timer);
       timer = setInterval(() => (time.textContent = fmt(Date.now() - t0)), 250);
     } else if (m.type === 'stop') {
       clearInterval(timer);
+      document.body.classList.remove('rec');
+      time.textContent = 'Ready';
+      note.textContent = note.dataset.rest = '';
+    } else if (m.type === 'status') {
+      const mic = document.getElementById('mic');
+      mic.textContent = m.mic;
+      mic.classList.toggle('off', !!m.micOff);
+      document.getElementById('cam').textContent = m.cam;
+    } else if (m.type === 'note') {
+      const before = note.dataset.rest || note.textContent;
+      note.dataset.rest = before;
+      note.textContent = m.text;
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { note.textContent = note.dataset.rest; }, 1400);
     } else if (m.type === 'marker') {
+      note.dataset.rest = m.count + (m.count === 1 ? ' marker' : ' markers');
       note.textContent = m.title;
       document.body.classList.add('flash');
       clearTimeout(flashTimer);

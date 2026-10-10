@@ -26,16 +26,34 @@ const DEFAULTS = {
   port: 8443,
   token: null,
   hideFromCapture: true,
+  statusBox: 'always', // always | recording | off
+  statusCorner: 'tr',
+  cornerMargin: 0,
   finalize: 'cfr',
   bitrateMbps: 12,
   canvas: { w: 1920, h: 1080, fps: 30 },
   hotkeys: {
+    // Every string here is an action id the renderer knows (see ACTIONS in
+    // app.js). An empty string means unbound.
     record: 'Ctrl+Alt+R',
     cam: 'Ctrl+Alt+C',
+    camCycle: 'Ctrl+Alt+V',
+    camCorner: '',
+    camBig: '',
+    micMute: 'Ctrl+Alt+M',
+    desktopMute: '',
+    phoneMic: '',
+    nextMonitor: 'Ctrl+Alt+N',
+    prevMonitor: '',
+    monitor1: '',
+    monitor2: '',
+    monitor3: '',
+    showApp: '',
     markers: [
       { label: 'Cut', key: 'Ctrl+Alt+X', color: 'Red' },
       { label: 'Fix', key: 'Ctrl+Alt+F', color: 'Yellow' },
     ],
+    sources: {}, // source id -> key that shows or hides that source
   },
   audio: {
     mic: { deviceId: 'default', gain: 1, muted: false, delayMs: 0, ns: false },
@@ -52,6 +70,10 @@ let hud = null;
 let server = null;
 let rec = null; // { dir, name, raw, stream, markers, t0 }
 let badHotkeys = [];
+let hotkeysSuspended = false;
+let hudCorner = 'tr';
+const HUD_W = 280;
+const HUD_H = 58;
 let stim = null;
 
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
@@ -64,6 +86,7 @@ function merge(base, over) {
 function loadSettings() {
   settingsFile = path.join(app.getPath('userData'), 'settings.json');
   let saved = {};
+  if (SELFTEST) fs.rmSync(settingsFile, { force: true }); // every selftest starts from defaults
   try {
     saved = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
   } catch {}
@@ -101,10 +124,27 @@ function registerHotkeys() {
       badHotkeys.push(key);
     }
   };
-  reg(settings.hotkeys.record, () => send('hotkey', 'record'));
-  reg(settings.hotkeys.cam, () => send('hotkey', 'cam'));
+  if (hotkeysSuspended) return;
+  const hk = settings.hotkeys;
+  for (const [id, key] of Object.entries(hk)) {
+    if (typeof key !== 'string') continue;
+    reg(key, id === 'showApp' ? toggleWindow : () => send('hotkey', id));
+  }
+  for (const [sourceId, key] of Object.entries(hk.sources || {})) reg(key, () => send('hotkey', `source:${sourceId}`));
   // Marker keys are only held while recording so they stay free otherwise.
-  if (rec) settings.hotkeys.markers.forEach((m, i) => reg(m.key, () => addMarker(i)));
+  if (rec) hk.markers.forEach((m, i) => reg(m.key, () => addMarker(i)));
+}
+
+function toggleWindow() {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized() || !win.isVisible()) {
+    win.restore();
+    win.focus();
+  } else if (win.isFocused()) {
+    win.minimize();
+  } else {
+    win.focus();
+  }
 }
 
 function addMarker(index) {
@@ -161,8 +201,8 @@ function createWindows() {
   win.on('closed', () => app.quit());
 
   hud = new BrowserWindow({
-    width: 250,
-    height: 40,
+    width: HUD_W,
+    height: HUD_H,
     frame: false,
     resizable: false,
     movable: false,
@@ -175,6 +215,8 @@ function createWindows() {
   });
   hud.setAlwaysOnTop(true, 'screen-saver');
   hud.loadFile(path.join(__dirname, '..', 'renderer', 'hud.html'));
+  hud.webContents.once('did-finish-load', updateHud);
+  setInterval(dodgeMouse, 100);
 
   if (SELFTEST) {
     // A fast counter on screen, so extracted frames prove capture kept moving.
@@ -183,23 +225,78 @@ function createWindows() {
   }
 }
 
-function showHud() {
-  const area = screen.getPrimaryDisplay().workArea;
-  hud.setPosition(area.x + area.width - 250 - 16, area.y + 16);
-  hud.showInactive();
-  // Applied after show, and the window is never made click-through: display
-  // affinity does not stick to a hidden or layered window on Windows 10.
-  hud.setContentProtection(!NO_PROTECT);
+// ---------- status box ----------
+// A small always-on-top window on the monitor, excluded from capture. It can
+// not be click-through (see below), so instead it jumps to the other side of
+// the screen whenever the mouse gets near it.
+function hudSpot(corner) {
+  const a = screen.getPrimaryDisplay().workArea;
+  const m = 14;
+  return {
+    x: corner.includes('l') ? a.x + m : a.x + a.width - HUD_W - m,
+    y: corner.includes('t') ? a.y + m : a.y + a.height - HUD_H - m,
+  };
+}
+
+function placeHud(corner) {
+  hudCorner = corner;
+  const p = hudSpot(corner);
+  hud.setBounds({ x: p.x, y: p.y, width: HUD_W, height: HUD_H });
+}
+
+function updateHud() {
+  if (!hud || hud.isDestroyed()) return;
+  const want = settings.statusBox === 'always' || (settings.statusBox === 'recording' && !!rec);
+  if (!want) return hud.hide();
+  if (!hud.isVisible()) {
+    placeHud(settings.statusCorner);
+    hud.showInactive();
+    // Applied after show, and the window is never made click-through: display
+    // affinity does not stick to a hidden or layered window on Windows 10.
+    hud.setContentProtection(!NO_PROTECT);
+  }
+}
+
+function dodgeMouse() {
+  if (!hud || hud.isDestroyed() || !hud.isVisible()) return;
+  const c = screen.getCursorScreenPoint();
+  const near = (p, pad) => c.x >= p.x - pad && c.x <= p.x + HUD_W + pad && c.y >= p.y - pad && c.y <= p.y + HUD_H + pad;
+  const home = settings.statusCorner;
+  if (near(hudSpot(hudCorner), 16)) {
+    placeHud(hudCorner[0] + (hudCorner[1] === 'r' ? 'l' : 'r'));
+  } else if (hudCorner !== home && !near(hudSpot(home), 70)) {
+    placeHud(home);
+  }
 }
 
 function setupIpc() {
   ipcMain.handle('settings:get', () => ({ ...settings, badHotkeys, selftest: SELFTEST, serverError: server && server.error }));
   ipcMain.handle('settings:set', (_e, patch) => {
     settings = merge(settings, patch);
+    // Hotkeys replace wholesale so removed markers and source keys really go.
+    if (patch.hotkeys) settings.hotkeys = merge(DEFAULTS.hotkeys, patch.hotkeys);
+    if (patch.hotkeys) settings.hotkeys.sources = patch.hotkeys.sources || {};
     saveSettings();
     if (patch.hotkeys) registerHotkeys();
+    if ('statusBox' in patch || 'statusCorner' in patch) {
+      if (hud.isVisible()) placeHud(settings.statusCorner);
+      updateHud();
+    }
     if ('hideFromCapture' in patch) win.setContentProtection(settings.hideFromCapture && !NO_PROTECT);
     return { badHotkeys };
+  });
+
+  // While the settings sheet is listening for a new combo, the old bindings
+  // are released, otherwise the OS swallows the keypress before the app sees it.
+  ipcMain.handle('hotkeys:suspend', (_e, on) => {
+    hotkeysSuspended = !!on;
+    registerHotkeys();
+  });
+  ipcMain.on('hud:note', (_e, text) => sendHud({ type: 'note', text }));
+  ipcMain.on('hud:status', (_e, status) => sendHud({ type: 'status', ...status }));
+  ipcMain.handle('screens:list', async () => {
+    const list = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
+    return list.map((s) => ({ id: s.id, name: s.name, displayId: s.display_id, isScreen: true }));
   });
 
   ipcMain.handle('sources:list', async () => {
@@ -250,7 +347,7 @@ function setupIpc() {
   ipcMain.on('rec:started', (_e, t0) => {
     if (!rec) return;
     rec.t0 = t0;
-    showHud();
+    updateHud();
     sendHud({ type: 'start', t0 });
   });
   ipcMain.handle('rec:chunk', (_e, buf) => {
@@ -262,8 +359,8 @@ function setupIpc() {
     const r = rec;
     rec = null;
     registerHotkeys();
-    hud.hide();
     sendHud({ type: 'stop' });
+    updateHud();
     await new Promise((res) => r.stream.end(res));
     const base = path.join(r.dir, r.name);
     const out = `${base}.mp4`;
@@ -290,6 +387,10 @@ function setupIpc() {
     if (cmd === 'shot') {
       const img = await win.webContents.capturePage();
       fs.mkdirSync(settings.outputDir, { recursive: true });
+      fs.writeFileSync(path.join(settings.outputDir, data), img.toPNG());
+    }
+    if (cmd === 'hudshot') {
+      const img = await hud.webContents.capturePage();
       fs.writeFileSync(path.join(settings.outputDir, data), img.toPNG());
     }
     if (cmd === 'done') {
