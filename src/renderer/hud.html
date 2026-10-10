@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; background: #141416; color: #f2f2f3; font: 600 13px "Segoe UI", sans-serif; overflow: hidden; }
+  body { display: flex; align-items: center; gap: 9px; padding: 0 12px; box-sizing: border-box; border: 1px solid #2a2a30; }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: #ff4a3d; animation: blink 1.2s steps(2, start) infinite; }
+  #time { font-variant-numeric: tabular-nums; }
+  #note { margin-left: auto; color: #9a9aa3; font-weight: 500; white-space: nowrap; }
+  body.flash { background: #ff4a3d; }
+  body.flash #note, body.flash #dot { color: #fff; background-color: #fff; }
+  body.flash #note { background: none; }
+  @keyframes blink { to { visibility: hidden; } }
+</style>
+</head>
+<body>
+<span id="dot"></span><span id="time">0:00</span><span id="note">0 markers</span>
+<script>
+  let t0 = 0, timer = null, flashTimer = null;
+  const time = document.getElementById('time'), note = document.getElementById('note');
+  const fmt = (ms) => {
+    const s = Math.floor(ms / 1000), h = Math.floor(s / 3600);
+    const mm = String(Math.floor(s / 60) % 60).padStart(h ? 2 : 1, '0');
+    return (h ? h + ':' : '') + mm + ':' + String(s % 60).padStart(2, '0');
+  };
+  window.api.onHud((m) => {
+    if (m.type === 'start') {
+      t0 = m.t0;
+      note.textContent = '0 markers';
+      clearInterval(timer);
+      timer = setInterval(() => (time.textContent = fmt(Date.now() - t0)), 250);
+    } else if (m.type === 'stop') {
+      clearInterval(timer);
+    } else if (m.type === 'marker') {
+      note.textContent = m.title;
+      document.body.classList.add('flash');
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => {
+        document.body.classList.remove('flash');
+        note.textContent = m.count + (m.count === 1 ? ' marker' : ' markers');
+      }, 900);
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0e0e10">
+<title>FreeCast Camera</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #0e0e10; color: #f2f2f3; font: 15px -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  video.mirror { transform: scaleX(-1); }
+  #top { position: fixed; top: 0; left: 0; right: 0; padding: calc(env(safe-area-inset-top) + 12px) 16px 12px; display: flex; align-items: center; gap: 10px; background: linear-gradient(#000a, #0000); }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: #6b6b75; }
+  #dot.live { background: #3ddc84; }
+  #dot.wait { background: #ffb020; }
+  #dot.bad { background: #ff4a3d; }
+  #status { font-weight: 600; }
+  #detail { margin-left: auto; color: #c9c9d1; font-size: 13px; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 16px calc(env(safe-area-inset-bottom) + 14px); display: flex; gap: 10px; background: linear-gradient(#0000, #000c); }
+  button, select { flex: 1; height: 48px; border: 1px solid #3a3a42; border-radius: 10px; background: #1b1b1fd9; color: #f2f2f3; font: inherit; font-weight: 600; }
+  button.on { background: #ff4a3d; border-color: #ff4a3d; }
+  #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 32px; text-align: center; background: #0e0e10; }
+  #start h1 { margin: 0; font-size: 26px; }
+  #start p { margin: 0; color: #9a9aa3; line-height: 1.45; max-width: 320px; }
+  #go { flex: none; width: 220px; height: 56px; background: #ff4a3d; border-color: #ff4a3d; font-size: 17px; }
+  #err { color: #ff8a80; }
+</style>
+</head>
+<body>
+<video id="v" playsinline muted autoplay></video>
+<div id="top"><span id="dot"></span><span id="status">Idle</span><span id="detail"></span></div>
+<div id="bar">
+  <button id="flip">Flip</button>
+  <select id="quality">
+    <option value="1280x720">720p</option>
+    <option value="1920x1080" selected>1080p</option>
+  </select>
+  <button id="mic">Mic off</button>
+</div>
+<div id="start">
+  <h1>FreeCast Camera</h1>
+  <p>This phone becomes the face cam. Keep this tab open and the phone on the same Wi-Fi as the PC.</p>
+  <button id="go">Start camera</button>
+  <p id="err"></p>
+</div>
+<script>
+(() => {
+  const T = new URLSearchParams(location.search).get('t');
+  const ID = Math.random().toString(36).slice(2, 10);
+  const $ = (id) => document.getElementById(id);
+  const v = $('v');
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let stream = null, pc = null, facing = 'user', mic = false, attempt = 0, retry = null, wake = null;
+
+  function status(cls, text) {
+    $('dot').className = cls;
+    $('status').textContent = text;
+  }
+
+  async function send(msg) {
+    const r = await fetch(`/api/send?t=${T}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: ID, msg }),
+    });
+    if (!r.ok) throw new Error('send failed');
+  }
+
+  async function pollLoop() {
+    for (;;) {
+      try {
+        const r = await fetch(`/api/poll?t=${T}&id=${ID}`, { cache: 'no-store' });
+        if (!r.ok) throw new Error('poll failed');
+        for (const m of await r.json()) onMsg(m);
+      } catch {
+        await sleep(1500);
+      }
+    }
+  }
+
+  async function onMsg(m) {
+    if (!pc) return;
+    try {
+      if (m.type === 'answer') await pc.setRemoteDescription({ type: 'answer', sdp: m.sdp });
+      else if (m.type === 'candidate') await pc.addIceCandidate(m.candidate);
+    } catch {}
+  }
+
+  async function getMedia() {
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    const [w, h] = $('quality').value.split('x').map(Number);
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 30 } },
+      audio: mic ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false,
+    });
+    const track = stream.getVideoTracks()[0];
+    track.contentHint = 'motion';
+    v.srcObject = stream;
+    v.classList.toggle('mirror', facing === 'user');
+    const s = track.getSettings();
+    $('detail').textContent = `${s.width}x${s.height}`;
+  }
+
+  async function tune() {
+    for (const sender of pc.getSenders()) {
+      if (!sender.track || sender.track.kind !== 'video') continue;
+      try {
+        const p = sender.getParameters();
+        if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+        p.encodings[0].maxBitrate = 8000000;
+        p.degradationPreference = 'maintain-resolution';
+        await sender.setParameters(p);
+      } catch {}
+    }
+  }
+
+  function scheduleRetry(ms) {
+    clearTimeout(retry);
+    retry = setTimeout(connect, ms);
+  }
+
+  async function connect() {
+    clearTimeout(retry);
+    const mine = ++attempt;
+    if (pc) { pc.onconnectionstatechange = null; pc.close(); }
+    pc = new RTCPeerConnection({ iceServers: [] });
+    const me = pc;
+    stream.getTracks().forEach((t) => me.addTrack(t, stream));
+    me.onicecandidate = (e) => { if (e.candidate) send({ type: 'candidate', candidate: e.candidate.toJSON() }).catch(() => {}); };
+    me.onconnectionstatechange = () => {
+      if (mine !== attempt) return;
+      const s = me.connectionState;
+      if (s === 'connected') { status('live', 'Live'); tune(); clearTimeout(retry); }
+      else if (s === 'connecting') status('wait', 'Connecting');
+      else if (s === 'failed' || s === 'disconnected' || s === 'closed') { status('bad', 'Lost the PC, retrying'); scheduleRetry(2000); }
+    };
+    status('wait', 'Looking for the PC');
+    try {
+      const offer = await me.createOffer();
+      await me.setLocalDescription(offer);
+      await send({ type: 'offer', sdp: offer.sdp });
+      scheduleRetry(8000); // cancelled once connected
+    } catch {
+      status('bad', 'PC not answering, retrying');
+      scheduleRetry(3000);
+    }
+  }
+
+  async function swapTracks() {
+    await getMedia();
+    if (!pc) return;
+    const track = stream.getVideoTracks()[0];
+    const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+    if (sender) { await sender.replaceTrack(track); tune(); } else connect();
+  }
+
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch {}
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+
+  $('go').onclick = async () => {
+    try {
+      await getMedia();
+    } catch (e) {
+      $('err').textContent = 'Camera blocked: ' + e.message;
+      return;
+    }
+    $('start').style.display = 'none';
+    keepAwake();
+    pollLoop();
+    connect();
+  };
+  $('flip').onclick = () => { facing = facing === 'user' ? 'environment' : 'user'; swapTracks().catch(() => {}); };
+  $('quality').onchange = () => swapTracks().catch(() => {});
+  $('mic').onclick = async () => {
+    mic = !mic;
+    $('mic').textContent = mic ? 'Mic on' : 'Mic off';
+    $('mic').classList.toggle('on', mic);
+    try { await getMedia(); connect(); } catch {}
+  };
+  window.addEventListener('pagehide', () => { navigator.sendBeacon && navigator.sendBeacon(`/api/send?t=${T}`, JSON.stringify({ id: ID, msg: { type: 'bye' } })); });
+})();
+</script>
+</body>
+</html>

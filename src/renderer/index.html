@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FreeCast</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header id="top">
+  <div class="brand"><span class="mark"></span>FreeCast</div>
+  <button id="phonePill" class="pill"><span class="dot"></span><span id="phoneText">Phone not connected</span></button>
+  <div class="spacer"></div>
+  <span id="warn" class="warn"></span>
+  <button id="btnSettings" class="ghost">Settings</button>
+</header>
+
+<main>
+  <aside id="left">
+    <section class="panel grow">
+      <div class="panel-head">
+        <h2>Sources</h2>
+        <div class="menu-wrap">
+          <button id="btnAdd" class="small">Add</button>
+          <div id="addMenu" class="menu" hidden>
+            <button data-add="screen">Screen</button>
+            <button data-add="window">Window</button>
+            <button data-add="phone">Phone camera</button>
+            <button data-add="camera">Webcam or capture card</button>
+            <button data-add="image">Image</button>
+          </div>
+        </div>
+      </div>
+      <div id="srcList" class="list"></div>
+      <p class="hint">Top of the list draws on top. Drag corners to scale, edges to crop.</p>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Audio</h2></div>
+      <div id="audioRows"></div>
+    </section>
+  </aside>
+
+  <section id="center">
+    <div id="stageWrap">
+      <div id="stage">
+        <canvas id="out" width="1920" height="1080"></canvas>
+        <canvas id="overlay" width="1920" height="1080" tabindex="0"></canvas>
+      </div>
+    </div>
+    <footer id="bar">
+      <button id="btnRec" class="rec"><span class="rec-dot"></span><span id="recLabel">Record</span></button>
+      <span id="recTime">0:00</span>
+      <div id="markerBtns"></div>
+      <div class="spacer"></div>
+      <div id="result"></div>
+    </footer>
+  </section>
+
+  <aside id="right">
+    <section class="panel grow">
+      <div class="panel-head"><h2>Properties</h2></div>
+      <div id="props"><p class="hint">Select a source on the canvas.</p></div>
+    </section>
+  </aside>
+</main>
+
+<div id="modal" class="modal" hidden>
+  <div class="sheet">
+    <div class="sheet-head"><h2 id="modalTitle"></h2><button id="modalClose" class="ghost">Close</button></div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script src="scene.js"></script>
+<script src="audio.js"></script>
+<script src="phone.js"></script>
+<script src="recorder.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

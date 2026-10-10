@@ -1,0 +1,19 @@
+{
+  "name": "freecast",
+  "productName": "FreeCast",
+  "version": "0.1.0",
+  "description": "Free screen recorder for devlogs: scene layout, phone-as-webcam over the LAN, hotkey edit markers.",
+  "main": "src/main/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "selftest": "electron . --selftest"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "selfsigned": "2.4.1"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0"
+  }
+}
