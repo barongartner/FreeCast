@@ -1,6 +1,6 @@
 # Logo, favicon and GitHub assets - Sunday Oct 11
 
-*Time worked: 3m (3:58 PM to 4:01 PM)*
+*Time worked: 4m (3:58 PM to 4:02 PM)*
 
 ## Timeline
 
@@ -38,10 +38,17 @@ Looked at the rendered icon, both lockups, the 32 px favicon enlarged, the socia
 the app header from a selftest screenshot. Selftest still passes. Not looked at: the taskbar
 icon and the phone's home-screen icon.
 
+**4:02 PM - "Why big white box and counting numbers" and "remove that subtitle, it sucks ass."**
+The white box was the selftest's on-screen counter, flashing up on his monitor each time the
+selftest ran. Told him what it was; warn before running the selftest while he is at the PC.
+The subtitle was the one-line pitch under the lockup on the social preview. Removed; the
+preview is now the lockup alone, centred.
+
 ## Decisions
 
 | Decision | Rationale |
 |---|---|
+| No tagline on the social preview | Baron's call; the lockup stands on its own |
 | One mark, two colours, no gradients | Has to read at 16 px and match the flat UI |
 | SVG is the source, PNG and ICO are built | One place to change the logo; `npx electron tools/build-icons.js` rebuilds everything |
 | Built images are committed | The app, the phone page and the README need them without a build step |
