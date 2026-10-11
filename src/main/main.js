@@ -177,6 +177,7 @@ function createWindows() {
     minHeight: 680,
     backgroundColor: '#0e0e10',
     title: 'FreeCast',
+    icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),
     show: false,
     webPreferences: { preload, backgroundThrottling: false },
   });
@@ -412,6 +413,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
+    app.setAppUserModelId('com.barongartner.freecast'); // own taskbar group and icon, not Electron's
     loadSettings();
     if (!SELFTEST) {
       server = startServer({
@@ -419,6 +421,7 @@ if (!app.requestSingleInstanceLock()) {
         token: settings.token,
         certDir: app.getPath('userData'),
         phoneDir: path.join(__dirname, '..', 'phone'),
+        assetsDir: path.join(__dirname, '..', '..', 'assets'),
         onSignal: (id, msg) => send('signal', { id, msg }),
       });
     }

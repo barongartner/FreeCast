@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
+  <!-- GitHub social preview (Settings, Social preview). 1280x640. -->
+  <mask id="bite">
+    <rect width="512" height="512" fill="#fff"/>
+    <circle cx="380" cy="340" r="126" fill="#000"/>
+  </mask>
+  <rect width="1280" height="640" fill="#0e0e10"/>
+  <g transform="translate(250 150) scale(0.6)">
+    <g transform="translate(10 22) scale(0.78)">
+      <rect x="44" y="84" width="400" height="288" rx="62" fill="#f2f2f3" mask="url(#bite)"/>
+      <circle cx="380" cy="340" r="88" fill="#ff4a3d"/>
+    </g>
+    <text x="440" y="272" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="212" font-weight="700" letter-spacing="-5" fill="#f2f2f3">FreeCast</text>
+  </g>
+  <text x="640" y="470" text-anchor="middle" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="40" font-weight="400" fill="#9a9aa3">Free screen recorder for devlogs. Your phone is the face cam.</text>
+</svg>

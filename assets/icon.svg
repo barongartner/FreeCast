@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- App icon: the mark on a dark tile. -->
+  <mask id="bite">
+    <rect width="512" height="512" fill="#fff"/>
+    <circle cx="380" cy="340" r="126" fill="#000"/>
+  </mask>
+  <rect width="512" height="512" rx="116" fill="#141416"/>
+  <g transform="translate(256 256) scale(0.7) translate(-256 -256)">
+    <rect x="44" y="84" width="400" height="288" rx="62" fill="#f2f2f3" mask="url(#bite)"/>
+    <circle cx="380" cy="340" r="88" fill="#ff4a3d"/>
+  </g>
+</svg>

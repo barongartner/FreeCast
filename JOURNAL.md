@@ -1,3 +1,57 @@
+# Logo, favicon and GitHub assets - Sunday Oct 11
+
+*Time worked: 3m (3:58 PM to 4:01 PM)*
+
+## Timeline
+
+**3:58 PM - Baron asked for a logo, good quality, and a favicon.**
+The mark: a rounded screen with a circle biting into its bottom-right corner. The circle is the
+face cam sitting in the corner of the recording and, in the brand red, the record light. Two
+colours, flat, no gradients; it holds up at 16 px. Screen is `#f2f2f3` on dark backgrounds and
+`#141416` on light ones; the dot is always `#ff4a3d`. Wordmark is Segoe UI Bold.
+
+Sources are hand-written SVG in `assets/`: `logo.svg` and `logo-dark.svg` (mark only),
+`icon.svg` (mark on a dark tile, the app icon), `icon-small.svg` (same mark drawn bigger and
+heavier for 16 to 48 px), `lockup.svg` and `lockup-dark.svg` (mark plus wordmark).
+
+`tools/build-icons.js` rasterizes them with Electron itself, since nothing else on the PC
+renders SVG with system fonts: `icon.ico` (16, 24, 32, 48 from the small drawing; 64, 128, 256
+from the full one), `icon-512.png`, `icon-256.png`, `apple-touch-icon.png`, `favicon-32.png`,
+`logo.png`. Two bugs on the way: the script quit after the first render because closing the
+only window quits an Electron app by default, and the mark sat low and right in the tile
+because it was centred on the screen rectangle and not on the whole mark.
+
+Wired in: window and taskbar icon (plus an app user model id so Windows stops grouping it
+under Electron), the brand mark in the app header, favicon and home-screen icon and start
+screen logo on the phone page. The phone server answers `/favicon.ico`,
+`/apple-touch-icon.png` and `/logo.svg` without the token, because browsers ask for those on
+their own.
+
+**Between 3:58 PM and 4:01 PM - "Add an asset folder for GitHub."**
+`assets/github/`: `lockup.png` and `lockup-dark.png` for the README, which now swaps them by
+theme with a `picture` element, and `social-preview.png` at 1280x640 with the lockup and a
+one-line pitch. The social preview cannot be set from the command line; it is uploaded by hand
+under the repo's Settings, Social preview.
+
+**4:01 PM - Checked.**
+Looked at the rendered icon, both lockups, the 32 px favicon enlarged, the social preview, and
+the app header from a selftest screenshot. Selftest still passes. Not looked at: the taskbar
+icon and the phone's home-screen icon.
+
+## Decisions
+
+| Decision | Rationale |
+|---|---|
+| One mark, two colours, no gradients | Has to read at 16 px and match the flat UI |
+| SVG is the source, PNG and ICO are built | One place to change the logo; `npx electron tools/build-icons.js` rebuilds everything |
+| Built images are committed | The app, the phone page and the README need them without a build step |
+
+## Open
+
+- **Social preview is not uploaded.** Needs Baron in the repo settings, or leave it.
+- **No packaged build yet**, so the .exe itself still carries Electron's icon; the window and
+  taskbar use ours.
+
 # Repo opened, first working recorder, first round of feedback - Saturday Oct 10
 
 *Time worked: 30m (4:36 PM to 5:06 PM)*

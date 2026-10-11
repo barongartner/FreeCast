@@ -49,7 +49,15 @@ function loadCert(dir, ips) {
   return c;
 }
 
-function startServer({ port, token, certDir, phoneDir, onSignal }) {
+// Icons the phone browser asks for on its own, without the token.
+const PUBLIC = {
+  '/favicon.ico': ['icon.ico', 'image/x-icon'],
+  '/apple-touch-icon.png': ['apple-touch-icon.png', 'image/png'],
+  '/apple-touch-icon-precomposed.png': ['apple-touch-icon.png', 'image/png'],
+  '/logo.svg': ['logo.svg', 'image/svg+xml'],
+};
+
+function startServer({ port, token, certDir, phoneDir, assetsDir, onSignal }) {
   const cert = loadCert(certDir, lanIPs());
   const clients = new Map(); // phone id -> { msgs, waiter }
 
@@ -69,6 +77,16 @@ function startServer({ port, token, certDir, phoneDir, onSignal }) {
 
   const server = https.createServer({ key: cert.key, cert: cert.cert }, (req, res) => {
     const url = new URL(req.url, 'https://x');
+    if (req.method === 'GET' && PUBLIC[url.pathname] && assetsDir) {
+      const [file, type] = PUBLIC[url.pathname];
+      try {
+        const body = fs.readFileSync(path.join(assetsDir, file));
+        res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'max-age=86400' }).end(body);
+      } catch {
+        res.writeHead(404).end();
+      }
+      return;
+    }
     if (url.searchParams.get('t') !== token) {
       res.writeHead(403).end('Forbidden');
       return;

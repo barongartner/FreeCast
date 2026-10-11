@@ -49,6 +49,9 @@ date '+%-I:%M %p'
 | `src/renderer/recorder.js` | MediaRecorder on the canvas, chunks streamed to disk |
 | `src/renderer/app.js` | UI wiring, settings, selftest driver |
 | `src/phone/phone.html` | The page the phone opens from the QR code |
+| `assets/*.svg` | Logo sources: `logo` (mark), `icon` and `icon-small` (app tile), `lockup` (mark plus wordmark), `-dark` variants for light backgrounds |
+| `assets/github/` | GitHub-facing images: README lockups for light and dark themes, and `social-preview.png` (1280x640, uploaded by hand under repo Settings, Social preview) |
+| `tools/build-icons.js` | Rebuilds every PNG and `icon.ico` from the SVGs: `npx electron tools/build-icons.js` |
 
 ## Verifying
 

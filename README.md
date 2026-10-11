@@ -1,4 +1,7 @@
-# FreeCast
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/github/lockup.png">
+  <img src="assets/github/lockup-dark.png" alt="FreeCast" width="300">
+</picture>
 
 Free screen recorder for devlogs. No account, no watermark, nothing leaves your network.
 

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1340 400">
+  <!-- Mark plus wordmark, for dark backgrounds. -->
+  <mask id="bite">
+    <rect width="512" height="512" fill="#fff"/>
+    <circle cx="380" cy="340" r="126" fill="#000"/>
+  </mask>
+  <g transform="translate(10 22) scale(0.78)">
+    <rect x="44" y="84" width="400" height="288" rx="62" fill="#f2f2f3" mask="url(#bite)"/>
+    <circle cx="380" cy="340" r="88" fill="#ff4a3d"/>
+  </g>
+  <text x="440" y="272" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="212" font-weight="700" letter-spacing="-5" fill="#f2f2f3">FreeCast</text>
+</svg>

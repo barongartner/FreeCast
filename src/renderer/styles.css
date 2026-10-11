@@ -29,7 +29,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px;
 
 #top { height: 48px; display: flex; align-items: center; gap: 14px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .brand { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 700; letter-spacing: 0.01em; }
-.mark { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
+.mark { width: 24px; height: 24px; display: block; }
 .pill { display: flex; align-items: center; gap: 8px; height: 28px; border-radius: 14px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: #5a5a63; }
 .pill.live .dot { background: var(--ok); }

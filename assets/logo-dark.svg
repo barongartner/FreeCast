@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- FreeCast mark for light backgrounds. -->
+  <mask id="bite">
+    <rect width="512" height="512" fill="#fff"/>
+    <circle cx="380" cy="340" r="126" fill="#000"/>
+  </mask>
+  <rect x="44" y="84" width="400" height="288" rx="62" fill="#141416" mask="url(#bite)"/>
+  <circle cx="380" cy="340" r="88" fill="#ff4a3d"/>
+</svg>
