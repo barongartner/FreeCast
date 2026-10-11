@@ -1,6 +1,6 @@
 # Logo, favicon and GitHub assets - Sunday Oct 11
 
-*Time worked: 4m (3:58 PM to 4:02 PM)*
+*Time worked: 8m (3:58 PM to 4:06 PM)*
 
 ## Timeline
 
@@ -44,10 +44,16 @@ selftest ran. Told him what it was; warn before running the selftest while he is
 The subtitle was the one-line pitch under the lockup on the social preview. Removed; the
 preview is now the lockup alone, centred.
 
+**4:06 PM - "Make the blinking recording indicator not blink, just navy."**
+The dot in the status box is now a steady navy (`#2747a8`) while recording, grey when idle.
+Pure navy `#000080` disappears against the box's near-black background, so it is a navy
+bright enough to see. The blink animation is gone.
+
 ## Decisions
 
 | Decision | Rationale |
 |---|---|
+| Recording dot is steady navy, not blinking red | Baron's call; a blinking light in the corner of the monitor is a distraction |
 | No tagline on the social preview | Baron's call; the lockup stands on its own |
 | One mark, two colours, no gradients | Has to read at 16 px and match the flat UI |
 | SVG is the source, PNG and ICO are built | One place to change the logo; `npx electron tools/build-icons.js` rebuilds everything |

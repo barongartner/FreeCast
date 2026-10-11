@@ -7,7 +7,7 @@
   body { display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 12px; box-sizing: border-box; border: 1px solid #2a2a30; }
   .line { display: flex; align-items: center; gap: 9px; white-space: nowrap; overflow: hidden; }
   #dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #5a5a63; }
-  body.rec #dot { background: #ff4a3d; animation: blink 1.2s steps(2, start) infinite; }
+  body.rec #dot { background: #2747a8; } /* steady navy while recording, no blink */
   #time { font-variant-numeric: tabular-nums; }
   #note { margin-left: auto; color: #9a9aa3; font-weight: 500; }
   #sub { color: #9a9aa3; font-weight: 500; font-size: 12px; gap: 14px; }
@@ -15,7 +15,6 @@
   body.flash { background: #ff4a3d; }
   body.flash #note, body.flash #sub, body.flash #mic.off { color: #fff; }
   body.flash #dot { background: #fff; }
-  @keyframes blink { to { visibility: hidden; } }
 </style>
 </head>
 <body>
