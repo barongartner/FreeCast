@@ -19,7 +19,7 @@ const Recorder = (() => {
     onState(s, extra);
   };
 
-  async function start({ fps, bitrateMbps }) {
+  async function start({ fps, bitrateMbps, audioKbps = 192 }) {
     if (state !== 'idle') return;
     set('starting');
     const [mime, ext] = TYPES.find(([m]) => MediaRecorder.isTypeSupported(m)) || [];
@@ -29,7 +29,7 @@ const Recorder = (() => {
 
     const video = Scene.canvas.captureStream(fps).getVideoTracks()[0];
     const stream = new MediaStream([video, ...Mixer.stream.getAudioTracks()]);
-    rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bitrateMbps * 1e6, audioBitsPerSecond: 192000 });
+    rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bitrateMbps * 1e6, audioBitsPerSecond: audioKbps * 1000 });
     writes = Promise.resolve();
     rec.ondataavailable = (e) => {
       if (!e.data.size) return;

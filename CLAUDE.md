@@ -36,6 +36,17 @@ date '+%-I:%M %p'
 - Recordings default to `F:\Space\FreeCast`. Intermediates (`*.raw.mkv`) are deleted once the
   MP4 is finalized.
 
+## Profile and logs
+
+Settings, the phone certificate and `freecast.log` live in `C:\Users\baron\.freecast`. Not in
+AppData: a process started from a packaged app (the Claude desktop app is one) gets its AppData
+writes redirected into the package's private storage, which gave FreeCast two profiles and made
+settings look like they never saved. Read `freecast.log` first when Baron reports a crash.
+
+Set `FREECAST_PROFILE` to a scratch folder to run a second copy next to the real one. Do not
+start the real app from a Claude session to "check" settings without that variable unless Baron
+asked for a relaunch.
+
 ## Layout
 
 | Path | What |

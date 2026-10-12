@@ -36,8 +36,16 @@
 <div id="bar">
   <button id="flip">Flip</button>
   <select id="quality">
+    <option value="854x480">480p</option>
     <option value="1280x720">720p</option>
     <option value="1920x1080" selected>1080p</option>
+    <option value="2560x1440">1440p</option>
+    <option value="3840x2160">4K</option>
+  </select>
+  <select id="rate">
+    <option value="24">24 fps</option>
+    <option value="30" selected>30 fps</option>
+    <option value="60">60 fps</option>
   </select>
   <button id="mic">Mic on</button>
 </div>
@@ -97,7 +105,7 @@
     // The mic always rides along so the PC can mix it in from its own side;
     // the Mic button here only mutes it. If mic access is refused, carry on
     // with video alone.
-    const video = { facingMode: facing, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 30 } };
+    const video = { facingMode: facing, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: +$('rate').value } };
     const audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video, audio: hasMic ? audio : false });
@@ -113,7 +121,9 @@
     v.srcObject = stream;
     v.classList.toggle('mirror', facing === 'user');
     const s = track.getSettings();
-    $('detail').textContent = `${s.width}x${s.height}`;
+    $('detail').textContent = `${s.width}x${s.height} ${Math.round(s.frameRate || 0)} fps`;
+    // The phone remembers its own choices between visits.
+    try { localStorage.setItem('freecast', JSON.stringify({ quality: $('quality').value, rate: $('rate').value, facing, mic })); } catch {}
   }
 
   async function tune() {
@@ -122,7 +132,8 @@
       try {
         const p = sender.getParameters();
         if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-        p.encodings[0].maxBitrate = 8000000;
+        const px = (sender.track.getSettings().width || 1920) * (sender.track.getSettings().height || 1080);
+        p.encodings[0].maxBitrate = Math.max(2500000, Math.min(24000000, Math.round(px * 4))); // about 8 Mbps at 1080p
         p.degradationPreference = 'maintain-resolution';
         await sender.setParameters(p);
       } catch {}
@@ -197,6 +208,14 @@
   };
   $('flip').onclick = () => { facing = facing === 'user' ? 'environment' : 'user'; swapTracks().catch(() => {}); };
   $('quality').onchange = () => swapTracks().catch(() => {});
+  $('rate').onchange = () => swapTracks().catch(() => {});
+  try {
+    const saved = JSON.parse(localStorage.getItem('freecast') || '{}');
+    if (saved.quality) $('quality').value = saved.quality;
+    if (saved.rate) $('rate').value = saved.rate;
+    if (saved.facing) facing = saved.facing;
+    if (typeof saved.mic === 'boolean') mic = saved.mic;
+  } catch {}
   $('mic').onclick = () => {
     if (!hasMic || !stream) return;
     mic = !mic;

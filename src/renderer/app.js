@@ -36,6 +36,10 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => api.setSettings({ scene: Scene.serialize() }), 400);
   }
+  // Closing the window inside the debounce used to lose the last layout change.
+  window.addEventListener('beforeunload', () => api.flushSettings({ scene: Scene.serialize() }));
+  window.addEventListener('error', (e) => api.log('page-error', `${e.message} at ${String(e.filename).split('/').pop()}:${e.lineno}`));
+  window.addEventListener('unhandledrejection', (e) => api.log('page-rejection', e.reason && e.reason.stack ? e.reason.stack : String(e.reason)));
 
   // ---------- media for sources ----------
   const fileUrl = (p) => encodeURI('file:///' + p.replace(/\\/g, '/')).replace(/#/g, '%23');
@@ -70,6 +74,12 @@
     } catch (err) {
       console.warn('source offline:', s.name, err.message);
     }
+  }
+
+  // Capture sources are opened at a frame rate, so a new rate means reopening.
+  async function reacquire() {
+    const list = await api.listSources();
+    for (const s of Scene.list()) if (s.type === 'screen' || s.type === 'window' || s.type === 'camera') await acquire(s, list);
   }
 
   // ---------- modal ----------
@@ -556,7 +566,7 @@
     if (Recorder.state() === 'recording') $('result').replaceChildren(h('span', {}, `${marker.title} at ${fmt(marker.ms)}`));
   });
 
-  const toggleRec = () => Recorder.toggle({ fps: settings.canvas.fps, bitrateMbps: settings.bitrateMbps });
+  const toggleRec = () => Recorder.toggle({ fps: settings.canvas.fps, bitrateMbps: settings.bitrateMbps, audioKbps: settings.audioKbps });
   $('btnRec').onclick = toggleRec;
 
   // ---------- camera layouts ----------
@@ -688,17 +698,38 @@
   function showSettings() {
     const hk = settings.hotkeys;
     const field = (label, control) => h('div', { class: 'field' }, h('label', {}, label), control);
-    const dir = h('input', { type: 'text', value: settings.outputDir, readonly: true });
-    const base = h('input', { type: 'text', value: settings.baseName, oninput: () => save({ baseName: base.value.trim() || 'Recording' }) });
-    const sizes = [[1920, 1080], [2560, 1440], [1280, 720], [1920, 1200], [1080, 1920]];
+    // Output path: a folder you can type or browse to, plus a name pattern.
+    const preview = h('code', { class: 'pathprev' }, '');
+    const showPreview = async () => { preview.textContent = 'Next file: ' + (await api.previewName()); };
+    const dir = h('input', { type: 'text', value: settings.outputDir, spellcheck: 'false', oninput: async () => { const v = dir.value.trim(); if (v) { await save({ outputDir: v }); showPreview(); } } });
+    const base = h('input', { type: 'text', value: settings.baseName, spellcheck: 'false', oninput: async () => { await save({ baseName: base.value.trim() || 'Recording {n}' }); showPreview(); } });
+    showPreview();
+
+    const setCanvas = (w, hh) => { Scene.setSize(w, hh); layoutStage(); save({ canvas: { ...settings.canvas, w, h: hh } }); customW.value = w; customH.value = hh; };
+    const sizes = [
+      [1280, 720, '720p'], [1600, 900, '900p'], [1920, 1080, '1080p'], [2560, 1440, '1440p'], [3840, 2160, '4K'],
+      [1920, 1200, '16:10'], [2560, 1600, '16:10'], [2560, 1080, 'ultrawide'], [3440, 1440, 'ultrawide'],
+      [1080, 1920, 'vertical'], [720, 1280, 'vertical'], [1080, 1350, '4:5'], [1080, 1080, 'square'],
+    ];
     const cur = `${settings.canvas.w}x${settings.canvas.h}`;
-    const size = dropdown(sizes.map(([w, hh]) => ({ value: `${w}x${hh}`, label: `${w} x ${hh}` })), cur,
-      (v) => { const [w, hh] = v.split('x').map(Number); Scene.setSize(w, hh); layoutStage(); save({ canvas: { ...settings.canvas, w, h: hh } }); });
-    const fps = dropdown([30, 60].map((v) => ({ value: v, label: v + ' fps' })), settings.canvas.fps,
-      (v) => { save({ canvas: { ...settings.canvas, fps: v } }); startTicker(); });
-    const bitrate = dropdown([6, 8, 12, 16, 24, 40].map((v) => ({ value: v, label: v + ' Mbps' })), settings.bitrateMbps, (v) => save({ bitrateMbps: v }));
+    const sizeOpts = sizes.map(([w, hh, tag]) => ({ value: `${w}x${hh}`, label: `${w} x ${hh}  (${tag})` }));
+    if (!sizeOpts.some((o) => o.value === cur)) sizeOpts.unshift({ value: cur, label: `${settings.canvas.w} x ${settings.canvas.h}  (custom)` });
+    const size = dropdown(sizeOpts, cur, (v) => { const [w, hh] = v.split('x').map(Number); setCanvas(w, hh); });
+    const customW = h('input', { type: 'number', min: 320, max: 7680, step: 2, value: settings.canvas.w });
+    const customH = h('input', { type: 'number', min: 240, max: 4320, step: 2, value: settings.canvas.h });
+    const applyCustom = h('button', { style: 'flex:none', onclick: () => {
+      const even = (v, lo, hi) => Math.round(Math.max(lo, Math.min(hi, +v || lo)) / 2) * 2;
+      setCanvas(even(customW.value, 320, 7680), even(customH.value, 240, 4320));
+      showSettings();
+    } }, 'Apply');
+    const fps = dropdown([15, 20, 24, 25, 30, 48, 50, 60, 75, 90, 120, 144].map((v) => ({ value: v, label: v + ' fps' })), settings.canvas.fps,
+      async (v) => { await save({ canvas: { ...settings.canvas, fps: v } }); startTicker(); reacquire(); });
+    const bitrate = dropdown([2, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, 50, 60, 80, 100].map((v) => ({ value: v, label: v + ' Mbps' })), settings.bitrateMbps, (v) => save({ bitrateMbps: v }));
     const fin = dropdown([{ value: 'cfr', label: 'Constant frame rate (best for editing)' }, { value: 'fast', label: 'Fast copy (instant, variable frame rate)' }],
       settings.finalize, (v) => save({ finalize: v }));
+    const crf = dropdown([{ value: 12, label: 'Near lossless (huge files)' }, { value: 15, label: 'Very high' }, { value: 18, label: 'High' }, { value: 21, label: 'Balanced' }, { value: 24, label: 'Small files' }, { value: 28, label: 'Smallest' }],
+      settings.crf, (v) => save({ crf: v }));
+    const audioKbps = dropdown([96, 128, 160, 192, 256, 320].map((v) => ({ value: v, label: v + ' kbps' })), settings.audioKbps, (v) => save({ audioKbps: v }));
     const hud = dropdown([{ value: 'always', label: 'Always on screen' }, { value: 'recording', label: 'Only while recording' }, { value: 'off', label: 'Off' }],
       settings.statusBox, (v) => save({ statusBox: v }));
     const hudCorner = dropdown([{ value: 'tr', label: 'Top right' }, { value: 'tl', label: 'Top left' }, { value: 'br', label: 'Bottom right' }, { value: 'bl', label: 'Bottom left' }],
@@ -724,11 +755,20 @@
 
     openModal('Settings', [
       h('h3', {}, 'Output'),
-      field('Folder', h('div', { class: 'row' }, dir, h('button', { style: 'flex:none', onclick: async () => { const p = await api.pickDir(); if (p) { dir.value = p; save({ outputDir: p }); } } }, 'Browse'))),
+      field('Folder', h('div', { class: 'row' }, dir, h('button', { style: 'flex:none', onclick: async () => { const p = await api.pickDir(); if (p) { dir.value = p; await save({ outputDir: p }); showPreview(); } } }, 'Browse'))),
       field('File name', base),
-      field('Canvas', h('div', { class: 'row' }, size, fps)),
+      h('p', { class: 'hint', style: 'margin:0 0 6px 158px' }, 'Type or paste any folder. Name tokens: {n} counter, {date} Oct 12, {isodate} 2026-10-12, {time} 5-26 PM. A slash makes a subfolder, like {date}/Devlog {n}.'),
+      h('div', { style: 'margin:0 0 12px 158px' }, preview),
+      h('h3', {}, 'Video'),
+      field('Canvas size', size),
+      field('Custom size', h('div', { class: 'row' }, customW, customH, applyCustom)),
+      field('Frame rate', fps),
       field('Capture bitrate', bitrate),
       field('Finalize', fin),
+      field('Finished quality', crf),
+      field('Audio bitrate', audioKbps),
+      h('p', { class: 'hint' }, 'Frame rates above 60 only help if the monitor and this PC can keep up; if the recording stutters, go back down.'),
+      h('h3', {}, 'Hotkeys'),
       h('p', { class: 'hint' }, 'Every key below works while any other app has focus. Click a key box, press the combo. Function, numpad and navigation keys can be bound on their own; letters and digits need Ctrl, Alt, Shift or Win.'),
       ...actionRows,
       h('h3', {}, 'Marker keys (active while recording)'),

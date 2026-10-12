@@ -50,7 +50,7 @@ function chapterMeta(markers, durationMs) {
   return out;
 }
 
-function finalize({ raw, out, markers, durationMs, fps, mode, h264, onProgress }) {
+function finalize({ raw, out, markers, durationMs, fps, mode, crf = 18, audioKbps = 192, h264, onProgress }) {
   return new Promise((resolve) => {
     const args = ['-y', '-hide_banner', '-i', raw];
     let metaPath = null;
@@ -61,8 +61,8 @@ function finalize({ raw, out, markers, durationMs, fps, mode, h264, onProgress }
     }
     args.push('-map', '0:v:0', '-map', '0:a?');
     if (mode === 'fast' && h264) args.push('-c:v', 'copy');
-    else args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-r', String(fps), '-fps_mode', 'cfr');
-    args.push('-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out);
+    else args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', String(crf), '-pix_fmt', 'yuv420p', '-r', String(fps), '-fps_mode', 'cfr');
+    args.push('-c:a', 'aac', '-b:a', `${audioKbps}k`, '-movflags', '+faststart', out);
 
     let tail = '';
     const done = (res) => {

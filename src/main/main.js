@@ -18,7 +18,56 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
-if (SELFTEST) app.setPath('userData', path.join(app.getPath('temp'), 'FreeCast Selftest'));
+
+// Where settings live. Not under AppData on purpose: when FreeCast is started
+// from inside a packaged (MSIX) app such as the Claude desktop app, Windows
+// silently redirects that process's AppData writes into the package's private
+// storage. The app then had two profiles, one per way of launching it, and
+// settings looked like they never saved. The home folder is not redirected.
+const PROFILE = SELFTEST
+  ? path.join(app.getPath('temp'), 'FreeCast Selftest')
+  : process.env.FREECAST_PROFILE || path.join(os.homedir(), '.freecast');
+app.setPath('userData', PROFILE);
+
+// One-time move from the old AppData profile(s): take the most recently saved
+// settings, and the phone certificate that sits next to them.
+function migrateProfile() {
+  if (SELFTEST || process.env.FREECAST_PROFILE || fs.existsSync(path.join(PROFILE, 'settings.json'))) return;
+  const old = [];
+  if (process.env.APPDATA) old.push(path.join(process.env.APPDATA, 'FreeCast'));
+  try {
+    const packages = path.join(process.env.LOCALAPPDATA || '', 'Packages');
+    for (const name of fs.readdirSync(packages)) old.push(path.join(packages, name, 'LocalCache', 'Roaming', 'FreeCast'));
+  } catch {}
+  let best = null;
+  for (const dir of old) {
+    try {
+      const mtime = fs.statSync(path.join(dir, 'settings.json')).mtimeMs;
+      if (!best || mtime > best.mtime) best = { dir, mtime };
+    } catch {}
+  }
+  if (!best) return;
+  fs.mkdirSync(PROFILE, { recursive: true });
+  for (const file of ['settings.json', 'cert.json']) {
+    try {
+      fs.copyFileSync(path.join(best.dir, file), path.join(PROFILE, file));
+    } catch {}
+  }
+}
+migrateProfile();
+
+// Anything that goes wrong lands in a log next to the settings, so a crash
+// leaves something to read afterwards.
+function logLine(kind, detail) {
+  try {
+    fs.mkdirSync(PROFILE, { recursive: true });
+    fs.appendFileSync(path.join(PROFILE, 'freecast.log'), `${new Date().toISOString()} ${kind} ${detail}\n`);
+  } catch {}
+}
+process.on('uncaughtException', (err) => logLine('main-exception', err && err.stack ? err.stack : String(err)));
+process.on('unhandledRejection', (err) => logLine('main-rejection', err && err.stack ? err.stack : String(err)));
+app.on('render-process-gone', (_e, wc, d) => logLine('renderer-gone', `${d.reason} exit=${d.exitCode} url=${wc.getURL().split('/').pop()}`));
+app.on('child-process-gone', (_e, d) => logLine('child-gone', `${d.type} ${d.reason} exit=${d.exitCode}`));
 
 const DEFAULT_OUT = fs.existsSync('F:\\Space') ? 'F:\\Space\\FreeCast' : path.join(os.homedir(), 'Videos', 'FreeCast');
 const DEFAULTS = {
@@ -32,6 +81,8 @@ const DEFAULTS = {
   cornerMargin: 0,
   finalize: 'cfr',
   bitrateMbps: 12,
+  crf: 18, // x264 quality of the finished MP4; lower is better and bigger
+  audioKbps: 192,
   canvas: { w: 1920, h: 1080, fps: 30 },
   hotkeys: {
     // Every string here is an action id the renderer knows (see ACTIONS in
@@ -105,8 +156,21 @@ function saveSettings() {
     try {
       fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
       fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
-    } catch {}
+    } catch (err) {
+      logLine('settings-save-failed', err.message);
+    }
   }, 200);
+}
+
+// Write now, without the debounce. Used when the app is about to go away.
+function flushSettings() {
+  clearTimeout(saveTimer);
+  try {
+    fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
+    fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2));
+  } catch (err) {
+    logLine('settings-save-failed', err.message);
+  }
 }
 
 function send(channel, data) {
@@ -160,14 +224,42 @@ function addMarker(index) {
   sendHud({ type: 'marker', title: marker.title, count: rec.markers.length });
 }
 
-function nextName(dir, base) {
-  let taken = [];
-  try {
-    taken = fs.readdirSync(dir).map((f) => f.toLowerCase());
-  } catch {}
+// Turns the file name pattern into the next free name under dir. Tokens:
+// {n} counter, {date} "Oct 12", {isodate} "2026-10-12", {time} "5-26 PM".
+// A slash in the pattern makes a subfolder. A pattern with no tokens at all
+// gets a counter added, so "Devlog" gives Devlog 1, Devlog 2 and so on.
+function nextName(dir, pattern) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const hour = now.getHours() % 12 || 12;
+  let p = String(pattern || '').trim() || 'Recording {n}';
+  if (!/\{(n|date|isodate|time)\}/i.test(p)) p += ' {n}';
+  p = p
+    .replace(/\{date\}/gi, `${now.toLocaleString('en-US', { month: 'short' })} ${now.getDate()}`)
+    .replace(/\{isodate\}/gi, `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`)
+    .replace(/\{time\}/gi, `${hour}-${pad(now.getMinutes())} ${now.getHours() >= 12 ? 'PM' : 'AM'}`);
+  p = p
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((part) => part.replace(/[<>:"|?*\x00-\x1f]/g, '').trim().replace(/\.+$/, ''))
+    .filter((part) => part && part !== '..')
+    .join('/') || 'Recording {n}';
+  const taken = (stem) => {
+    const full = path.join(dir, stem);
+    const leaf = path.basename(full).toLowerCase();
+    try {
+      return fs.readdirSync(path.dirname(full)).some((f) => f.toLowerCase() === `${leaf}.mp4` || f.toLowerCase().startsWith(`${leaf}.raw.`));
+    } catch {
+      return false;
+    }
+  };
+  if (!/\{n\}/i.test(p)) {
+    if (!taken(p)) return p;
+    p += ' {n}';
+  }
   for (let n = 1; ; n++) {
-    const stem = `${base} ${n}`.toLowerCase();
-    if (!taken.some((f) => f === `${stem}.mp4` || f.startsWith(`${stem}.raw.`))) return `${base} ${n}`;
+    const stem = p.replace(/\{n\}/gi, String(n));
+    if (!taken(stem)) return stem;
   }
 }
 
@@ -290,6 +382,15 @@ function setupIpc() {
     return { badHotkeys };
   });
 
+  // The page sends its last unsaved state as it closes; synchronous so the
+  // write finishes before the window is gone.
+  ipcMain.on('settings:flush', (e, patch) => {
+    if (patch && !SELFTEST) settings = merge(settings, patch);
+    flushSettings();
+    e.returnValue = true;
+  });
+  ipcMain.on('log', (_e, kind, detail) => logLine(String(kind), String(detail).slice(0, 2000)));
+
   // While the settings sheet is listening for a new combo, the old bindings
   // are released, otherwise the OS swallows the keypress before the app sees it.
   ipcMain.handle('hotkeys:suspend', (_e, on) => {
@@ -339,18 +440,23 @@ function setupIpc() {
 
   ipcMain.handle('rec:start', (_e, { ext }) => {
     if (rec) return { error: 'Already recording.' };
-    const dir = settings.outputDir;
+    // The pattern may carry subfolders, so the take's real folder and name
+    // are split back out of the full path.
+    const full = path.join(settings.outputDir, nextName(settings.outputDir, settings.baseName));
+    const dir = path.dirname(full);
+    const name = path.basename(full);
     try {
       fs.mkdirSync(dir, { recursive: true });
     } catch (err) {
       return { error: `Cannot create ${dir}: ${err.message}` };
     }
-    const name = nextName(dir, settings.baseName || 'Recording');
     const raw = path.join(dir, `${name}.raw.${ext}`);
     rec = { dir, name, raw, stream: fs.createWriteStream(raw), markers: [], t0: null };
+    rec.stream.on('error', (err) => logLine('recording-write-failed', err.message));
     registerHotkeys();
     return { name };
   });
+  ipcMain.handle('rec:preview', () => path.join(settings.outputDir, `${nextName(settings.outputDir, settings.baseName)}.mp4`));
   ipcMain.on('rec:started', (_e, t0) => {
     if (!rec) return;
     rec.t0 = t0;
@@ -379,6 +485,8 @@ function setupIpc() {
       durationMs,
       fps,
       mode: settings.finalize,
+      crf: settings.crf,
+      audioKbps: settings.audioKbps,
       h264,
       onProgress: (p) => send('progress', p),
     });
@@ -436,6 +544,7 @@ if (!app.requestSingleInstanceLock()) {
     registerHotkeys();
   });
   app.on('will-quit', () => {
+    if (settings) flushSettings();
     globalShortcut.unregisterAll();
     vcam.stop();
   });

@@ -1,3 +1,80 @@
+# Settings that would not stick, more options, custom output paths - Monday Oct 12
+
+*Time worked: 6m (5:26 PM to 5:32 PM)*
+
+## Timeline
+
+**5:26 PM - "Settings aren't persistent."**
+True, and not for the reason I first went looking for. The save code worked. The app had two
+profiles. Electron keeps settings under `%APPDATA%\FreeCast`. The Claude desktop app is an MSIX
+package, and Windows redirects AppData writes made by anything started from inside a packaged
+app into that package's private storage
+(`%LOCALAPPDATA%\Packages\Claude_...\LocalCache\Roaming\FreeCast`). So every copy of FreeCast I
+launched from a Claude session read and wrote one settings file, and every copy Baron launched
+himself read and wrote another. Whatever he set up in one was missing in the other.
+
+How it was found: the settings file I could see had not been touched since my last launch the
+day before, although his copy had been running since 5:25 PM and writes at startup. A second
+copy on a scratch profile wrote its file fine, the disk was not full, the file was writable.
+Then the redirected folder turned up under Packages.
+
+Fix: the profile now lives in `C:\Users\baron\.freecast`, which is not redirected, so there is
+one profile however the app is started. On first run it copies over whichever old
+`settings.json` was saved most recently, plus the phone certificate next to it. Settings are
+also flushed synchronously when the window closes and when the app quits; before, a change made
+in the last 200 to 400 ms before closing was lost.
+
+I did not relaunch the app after this fix, on purpose. From inside a Claude session the old real
+profile is hidden behind the redirected copy, so a launch from here would migrate the stale
+one. Baron has to open it himself the first time.
+
+**Between 5:26 PM and 5:32 PM - "Also it just crashed."**
+Unexplained. The app's processes were all still alive and responding when I looked, the take he
+had running (Recording 2) had finalized, and Windows logged nothing. There was no log to read
+because FreeCast did not keep one. It does now: `freecast.log` in the profile folder records
+main-process exceptions, a renderer or GPU process dying, page errors, and failed settings or
+recording writes. Next crash leaves evidence. Need from Baron: what it looked like.
+
+**Between 5:26 PM and 5:32 PM - "Add more framerate options and everything."**
+
+- Frame rate: 15, 20, 24, 25, 30, 48, 50, 60, 75, 90, 120, 144. Changing it reopens the capture
+  sources, since they are opened at a rate.
+- Canvas: 720p, 900p, 1080p, 1440p, 4K, two 16:10 sizes, two ultrawides, two verticals, 4:5,
+  square, and a custom width and height.
+- Capture bitrate: 2 to 100 Mbps.
+- New: finished quality (x264 CRF 12 to 28) and audio bitrate (96 to 320 kbps).
+- Phone page: 480p to 4K, 24/30/60 fps, upload bitrate scaled to the resolution, and the phone
+  remembers its own quality, rate, camera and mic mute between visits.
+
+**Between 5:26 PM and 5:32 PM - "And custom output file paths."**
+The folder field can be typed or pasted into, not only browsed. The file name is a pattern:
+`{n}` counter, `{date}` (Oct 12), `{isodate}` (2026-10-12), `{time}` (5-26 PM), and a slash
+makes a subfolder, so `{date}/Devlog {n}` works. A pattern with no tokens gets a counter, which
+keeps the old "Recording 1, Recording 2" behaviour. Settings shows the full path of the next
+file as you type.
+
+**5:32 PM - Checked.**
+Selftest passes on the new build and its log is empty. The name pattern was run against the real
+recordings folder: "Recording" gives Recording 4, "{date}/Devlog {n}" gives Oct 12/Devlog 1,
+illegal characters are stripped. Looked at the Settings sheet in a screenshot. Not tested: the
+migration itself (it only runs for real on Baron's first launch), frame rates above 30 in an
+actual take, and the phone options.
+
+## Decisions
+
+| Decision | Rationale |
+|---|---|
+| Profile in `~\.freecast`, not AppData | AppData is redirected for processes started from a packaged app; two profiles is how settings "did not save" |
+| Keep a log file | A crash with nothing written down cannot be diagnosed |
+| File names are a pattern with tokens | Covers dated folders and custom names without a save dialog per take |
+
+## Open
+
+- **The crash is not diagnosed.** Waiting on a description, or on the next one landing in
+  `freecast.log`.
+- **High frame rates are offered, not proven.** The compositor and encoder share one old CPU.
+- **The old AppData profiles are left in place.** Harmless; delete once the new one is confirmed.
+
 # Logo, GitHub assets, and the phone as a PC webcam - Sunday Oct 11
 
 *Time worked: 2h 4m (3:58 PM to 6:02 PM)*
