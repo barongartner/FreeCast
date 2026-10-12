@@ -10,6 +10,7 @@
     "selftest": "electron . --selftest"
   },
   "dependencies": {
+    "koffi": "^3.3.3",
     "qrcode": "^1.5.4",
     "selfsigned": "2.4.1"
   },

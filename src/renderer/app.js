@@ -391,6 +391,74 @@
     );
   }
 
+  // ---------- phone as the PC's webcam and mic ----------
+  // Camera: frames go to the OBS Virtual Camera device (see vcam.js).
+  // Mic: the phone audio is played into an output device. With a virtual audio
+  // cable installed, that cable's other end is a microphone other apps can pick.
+  const micOut = new Audio();
+  micOut.autoplay = true;
+
+  async function applyPhoneOut() {
+    const id = settings.audio.phoneOut;
+    const tracks = phoneStream ? phoneStream.getAudioTracks() : [];
+    if (id === 'none' || !tracks.length) {
+      micOut.srcObject = null;
+      return;
+    }
+    try {
+      await micOut.setSinkId(id);
+      micOut.srcObject = new MediaStream(tracks);
+      await micOut.play();
+    } catch (err) {
+      console.warn('phone mic output failed', err.message);
+      micOut.srcObject = null;
+    }
+  }
+
+  function setVcam(on) {
+    settings.vcam = { ...settings.vcam, on };
+    save({ vcam: settings.vcam });
+    Vcam.setSource(settings.vcam.source);
+    Vcam.set(on);
+    renderVcam();
+    pushStatus();
+  }
+  Vcam.onError((msg) => {
+    settings.vcam = { ...settings.vcam, on: false };
+    save({ vcam: settings.vcam });
+    renderVcam(msg);
+    pushStatus();
+  });
+
+  async function renderVcam(error) {
+    const v = settings.vcam;
+    const outs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput' && d.deviceId !== 'default' && d.deviceId !== 'communications');
+    const cable = outs.some((d) => /cable|voicemeeter|virtual/i.test(d.label));
+    const box = h('input', { type: 'checkbox', checked: v.on, disabled: !settings.vcamAvailable, onchange: () => setVcam(box.checked) });
+    const src = dropdown([{ value: 'phone', label: 'Phone camera' }, { value: 'scene', label: 'Whole scene' }], v.source,
+      (value) => { settings.vcam = { ...settings.vcam, source: value }; save({ vcam: settings.vcam }); Vcam.setSource(value); });
+    const out = dropdown([{ value: 'none', label: 'Off' }, ...outs.map((d) => ({ value: d.deviceId, label: d.label || 'Output' }))],
+      outs.some((d) => d.deviceId === settings.audio.phoneOut) ? settings.audio.phoneOut : 'none',
+      (value) => { settings.audio.phoneOut = value; saveAudio(); applyPhoneOut(); });
+    const camHint = error ? error
+      : !settings.vcamAvailable ? 'Needs OBS Studio installed. FreeCast feeds the virtual camera it comes with.'
+      : v.on ? 'Live. In the other app, pick the camera named OBS Virtual Camera.'
+      : 'Makes the phone show up as a webcam in Discord, Zoom, browsers and the rest.';
+    const micHint = cable
+      ? 'Pick the cable input here, then pick the cable output as the microphone in the other app.'
+      : 'To use the phone as a mic in other apps, Windows needs a virtual audio cable (VB-CABLE is free). None is installed.';
+    $('vcamRows').replaceChildren(
+      h('div', { class: 'arow' },
+        h('div', { class: 'arow-top' }, h('label', {}, 'Camera to apps'), box),
+        src,
+        h('p', { class: 'hint' + (error ? ' bad' : ''), style: 'margin:6px 2px 0' }, camHint)),
+      h('div', { class: 'arow' },
+        h('div', { class: 'arow-top' }, h('label', {}, 'Mic to apps')),
+        out,
+        h('p', { class: 'hint', style: 'margin:6px 2px 0' }, micHint))
+    );
+  }
+
   setInterval(() => {
     for (const [key, bar] of Object.entries(meters)) {
       const v = Mixer.level(key);
@@ -399,7 +467,7 @@
       bar.classList.toggle('hot', db > -3);
     }
   }, 80);
-  navigator.mediaDevices.addEventListener('devicechange', renderAudio);
+  navigator.mediaDevices.addEventListener('devicechange', () => { renderAudio(); renderVcam(); });
 
   // ---------- phone ----------
   function updatePhone() {
@@ -423,6 +491,7 @@
       phoneAudioKey = key;
       Mixer.setStream('phone', stream && stream.getAudioTracks().length ? new MediaStream(stream.getAudioTracks()) : null);
       applyPhoneAudio();
+      applyPhoneOut();
     }
     pushStatus();
   }
@@ -578,6 +647,9 @@
       ['desktopMute', 'Desktop audio on or off', () => { setDesktopAudio(!settings.audio.system.on); note(settings.audio.system.on ? 'Desktop audio on' : 'Desktop audio off'); }],
       ['phoneMic', 'Phone mic on or off', () => { setPhoneMic(!settings.audio.phone.on); note(settings.audio.phone.on ? 'Phone mic on' : 'Phone mic off'); }],
     ]],
+    ['PC webcam', [
+      ['vcam', 'Send the camera to other apps, on or off', () => { setVcam(!settings.vcam.on); note(settings.vcam.on ? 'Webcam output on' : 'Webcam output off'); }],
+    ]],
   ];
   const ACTION_FN = Object.fromEntries(ACTIONS.flatMap(([, list]) => list.map(([id, , fn]) => [id, fn])));
 
@@ -596,6 +668,7 @@
       mic: mics.length ? mics.join(' + ') : 'Mic muted',
       micOff: !mics.length,
       cam: c ? 'Cam ' + camMode(c) : 'No cam',
+      extra: settings.vcam && settings.vcam.on ? 'Webcam out' : '',
     });
   }
 
@@ -684,6 +757,7 @@
     if (ticker) ticker.terminate ? ticker.terminate() : clearInterval(ticker);
     const tick = () => {
       Scene.draw();
+      Vcam.tick();
       if (!document.hidden) Scene.drawOverlay();
     };
     try {
@@ -722,6 +796,8 @@
   await applySystem();
   applyPhoneAudio();
   await renderAudio();
+  await renderVcam();
+  if (settings.vcam.on && !settings.selftest) setVcam(true);
   pushStatus();
 
   // ---------- selftest ----------
@@ -759,6 +835,8 @@
     await sleep(200);
     await api.selftest('shot', 'Settings Keys.png');
     closeModal();
+    setVcam(true); // the fake cam goes out as the PC webcam for the length of the take
+    await sleep(300);
     await api.selftest('hudshot', 'Status Box.png');
     afterState = (state, extra) => {
       if (state === 'idle' && (extra.result || extra.error)) api.selftest('done', extra.result || extra);

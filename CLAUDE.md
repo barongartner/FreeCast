@@ -47,6 +47,9 @@ date '+%-I:%M %p'
 | `src/renderer/audio.js` | Mixer: mic, desktop audio, phone mic |
 | `src/renderer/phone.js` | Desktop end of the WebRTC link |
 | `src/renderer/recorder.js` | MediaRecorder on the canvas, chunks streamed to disk |
+| `src/main/vcam.js` | Writes NV12 frames into the OBS Virtual Camera shared-memory queue (koffi, kernel32) |
+| `src/renderer/vcam.js` | Picks phone camera or scene, converts to NV12 in a worker, hands frames to main |
+| `src/renderer/ui.js` | DOM helper, in-page dropdown and colour swatches, key combo capture |
 | `src/renderer/app.js` | UI wiring, settings, selftest driver |
 | `src/phone/phone.html` | The page the phone opens from the QR code |
 | `assets/*.svg` | Logo sources: `logo` (mark), `icon` and `icon-small` (app tile), `lockup` (mark plus wordmark), `-dark` variants for light backgrounds |

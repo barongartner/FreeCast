@@ -3,23 +3,22 @@
 <head>
 <meta charset="utf-8">
 <style>
-  html, body { margin: 0; height: 100%; background: #141416; color: #f2f2f3; font: 600 13px "Segoe UI", sans-serif; overflow: hidden; }
-  body { display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 12px; box-sizing: border-box; border: 1px solid #2a2a30; }
+  /* The box is a steady navy at all times: no blinking, no colour flashes. */
+  html, body { margin: 0; height: 100%; background: #0f1c44; color: #f2f2f3; font: 600 13px "Segoe UI", sans-serif; overflow: hidden; }
+  body { display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 0 12px; box-sizing: border-box; border: 1px solid #2a3c7a; }
   .line { display: flex; align-items: center; gap: 9px; white-space: nowrap; overflow: hidden; }
-  #dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #5a5a63; }
-  body.rec #dot { background: #2747a8; } /* steady navy while recording, no blink */
+  #dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #5f6b94; }
+  body.rec #dot { background: #ff4a3d; } /* steady red while recording */
   #time { font-variant-numeric: tabular-nums; }
-  #note { margin-left: auto; color: #9a9aa3; font-weight: 500; }
-  #sub { color: #9a9aa3; font-weight: 500; font-size: 12px; gap: 14px; }
-  #mic.off { color: #ff8a80; }
-  body.flash { background: #ff4a3d; }
-  body.flash #note, body.flash #sub, body.flash #mic.off { color: #fff; }
-  body.flash #dot { background: #fff; }
+  #note { margin-left: auto; color: #aab4d8; font-weight: 500; }
+  #sub { color: #aab4d8; font-weight: 500; font-size: 12px; gap: 14px; }
+  #mic.off { color: #ff9a90; }
+  body.flash #note { color: #fff; font-weight: 700; }
 </style>
 </head>
 <body>
 <div class="line"><span id="dot"></span><span id="time">Ready</span><span id="note"></span></div>
-<div class="line" id="sub"><span id="mic"></span><span id="cam"></span></div>
+<div class="line" id="sub"><span id="mic"></span><span id="cam"></span><span id="extra"></span></div>
 <script>
   let t0 = 0, timer = null, flashTimer = null;
   const time = document.getElementById('time'), note = document.getElementById('note');
@@ -46,6 +45,7 @@
       mic.textContent = m.mic;
       mic.classList.toggle('off', !!m.micOff);
       document.getElementById('cam').textContent = m.cam;
+      document.getElementById('extra').textContent = m.extra || '';
     } else if (m.type === 'note') {
       const before = note.dataset.rest || note.textContent;
       note.dataset.rest = before;

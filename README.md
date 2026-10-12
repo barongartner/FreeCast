@@ -60,6 +60,16 @@ Double-click a source, or press Crop on canvas in Properties. The whole source s
 drag the handles of the crop window or slide it around, Enter when done. Properties also has
 aspect presets and percent fields.
 
+## Phone as the PC's webcam
+
+The Phone as PC webcam panel sends the phone camera (or the whole scene) to other apps. Turn on
+Camera to apps, then pick the camera named OBS Virtual Camera in Discord, Zoom or a browser.
+This needs OBS Studio installed, because FreeCast feeds the virtual camera OBS ships with.
+
+To use the phone as a microphone in other apps, Windows needs a virtual audio cable such as
+VB-CABLE. Pick the cable's input under Mic to apps, and the cable's output as the microphone in
+the other app.
+
 ## Status box
 
 A small box on your monitor shows Ready or the running time, the marker count, mic state and

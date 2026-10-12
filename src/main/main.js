@@ -6,6 +6,7 @@ const os = require('os');
 const QRCode = require('qrcode');
 const { startServer, lanIPs } = require('./server');
 const { finalize, writeMarkerFiles } = require('./finalize');
+const vcam = require('./vcam');
 
 const SELFTEST = process.argv.includes('--selftest');
 const NO_PROTECT = !!process.env.FREECAST_NO_PROTECT;
@@ -59,7 +60,9 @@ const DEFAULTS = {
     mic: { deviceId: 'default', gain: 1, muted: false, delayMs: 0, ns: false },
     system: { on: true, gain: 1 },
     phone: { on: false, gain: 1 },
+    phoneOut: 'none', // output device the phone mic is played into (a virtual cable makes it a PC mic)
   },
+  vcam: { on: false, source: 'phone' }, // phone | scene
   scene: null,
 };
 
@@ -211,7 +214,7 @@ function createWindows() {
     skipTaskbar: true,
     alwaysOnTop: true,
     show: false,
-    backgroundColor: '#141416',
+    backgroundColor: '#0f1c44',
     webPreferences: { preload, backgroundThrottling: false },
   });
   hud.setAlwaysOnTop(true, 'screen-saver');
@@ -271,7 +274,7 @@ function dodgeMouse() {
 }
 
 function setupIpc() {
-  ipcMain.handle('settings:get', () => ({ ...settings, badHotkeys, selftest: SELFTEST, serverError: server && server.error }));
+  ipcMain.handle('settings:get', () => ({ ...settings, badHotkeys, selftest: SELFTEST, serverError: server && server.error, vcamAvailable: vcam.isAvailable() }));
   ipcMain.handle('settings:set', (_e, patch) => {
     settings = merge(settings, patch);
     // Hotkeys replace wholesale so removed markers and source keys really go.
@@ -295,6 +298,9 @@ function setupIpc() {
   });
   ipcMain.on('hud:note', (_e, text) => sendHud({ type: 'note', text }));
   ipcMain.on('hud:status', (_e, status) => sendHud({ type: 'status', ...status }));
+  ipcMain.handle('vcam:start', (_e, o) => vcam.start(o));
+  ipcMain.on('vcam:frame', (_e, nv12) => vcam.write(nv12));
+  ipcMain.on('vcam:stop', () => vcam.stop());
   ipcMain.handle('screens:list', async () => {
     const list = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } });
     return list.map((s) => ({ id: s.id, name: s.name, displayId: s.display_id, isScreen: true }));
@@ -429,5 +435,8 @@ if (!app.requestSingleInstanceLock()) {
     createWindows();
     registerHotkeys();
   });
-  app.on('will-quit', () => globalShortcut.unregisterAll());
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll();
+    vcam.stop();
+  });
 }

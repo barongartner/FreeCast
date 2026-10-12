@@ -652,6 +652,7 @@ const Scene = (() => {
     serialize: () => sources.map((s) => ({ ...s, crop: { ...s.crop } })),
     attachStream, attachImage, detach, ready, natural,
     hasMedia: (id) => media.has(id),
+    element: (id) => (media.get(id) || {}).el,
     fit, fill, center, corner, setShape, coverCrop, setCropAspect,
     setCropMode, cropping: () => cropId,
     setMargin: (v) => { MARGIN = v; },

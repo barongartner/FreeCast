@@ -1,6 +1,6 @@
-# Logo, favicon and GitHub assets - Sunday Oct 11
+# Logo, GitHub assets, and the phone as a PC webcam - Sunday Oct 11
 
-*Time worked: 8m (3:58 PM to 4:06 PM)*
+*Time worked: 2h 4m (3:58 PM to 6:02 PM)*
 
 ## Timeline
 
@@ -49,11 +49,56 @@ The dot in the status box is now a steady navy (`#2747a8`) while recording, grey
 Pure navy `#000080` disappears against the box's near-black background, so it is a navy
 bright enough to see. The blink animation is gone.
 
+**5:52 PM - "No, the red dot should be red and the box a steady navy. Also expand it so you
+can use the phone camera as just the PC's camera, and mic as well."**
+I had the navy on the wrong thing. Now: the status box itself is navy (`#0f1c44`) at all times,
+the recording dot is a steady red, grey when idle. The red background flash on a marker is gone
+too, since "steady" rules it out; a marker now just shows its name in bold white for a moment.
+
+Phone as the PC's webcam, for other apps (Discord, Zoom, browsers):
+
+- A camera other apps can see needs a driver. OBS Studio is installed here and ships one, "OBS
+  Virtual Camera", which reads frames from a named shared-memory queue (`OBSVirtualCamVideo`).
+  Anything that writes that queue becomes the camera. `src/main/vcam.js` does that through
+  kernel32 with the `koffi` FFI package: an 80 byte header, three NV12 frame slots, layout taken
+  from OBS's `shared-memory-queue.c`.
+- `src/renderer/vcam.js` picks the phone camera (honouring its crop and mirror) or the whole
+  scene, scales it to at most 1280 on the long side, converts to NV12 and hands it to main.
+- New left panel, Phone as PC webcam: Camera to apps (on/off, Phone camera or Whole scene) and
+  Mic to apps (an output device picker). New hotkey action for the camera toggle. The status
+  box shows "Webcam out" while it is live.
+
+Two things broke on the way, both found by the selftest:
+
+1. Wrapping the shared memory in a Buffer killed the app outright (`napi_get_last_error_info`).
+   Electron forbids ArrayBuffers that point at outside memory. Every write is now a
+   `RtlMoveMemory` copy into the mapping.
+2. With webcam output on, the app froze. Scaling, reading back and converting a frame on the
+   page's own thread took longer than a frame, the tick queue backed up, and timers starved. The
+   work now runs in a worker, one frame in flight at a time, skipping frames when it is busy.
+
+Phone as the PC's mic: not possible without a virtual audio cable driver, and none is installed
+(sound devices on this PC: Realtek, AMD, NVIDIA, Intel). FreeCast's half is built: Mic to apps
+plays the phone mic into any output device. Once a cable such as VB-CABLE is installed, pick its
+input there and its output as the microphone in the other app. Installing a driver is Baron's
+call and his click; I did not download or install anything.
+
+**6:02 PM - Verified.**
+First a bare test pattern, then the real thing: with webcam output on during a selftest take,
+`ffmpeg -f dshow -i video="OBS Virtual Camera"` returned a live frame of the fake cam, cropped
+the way the source was cropped. The take recorded alongside it kept exact timing (counter read
+55, 75, 95 at 2, 4, 6 seconds) including while minimized. Not tested: the real phone as the
+source, a real app such as Discord picking the camera, and the mic path, which has nothing to
+play into yet.
+
 ## Decisions
 
 | Decision | Rationale |
 |---|---|
-| Recording dot is steady navy, not blinking red | Baron's call; a blinking light in the corner of the monitor is a distraction |
+| Status box is navy, recording dot steady red, nothing blinks or flashes | Baron's call, corrected after I put the navy on the dot |
+| Webcam output rides on OBS's virtual camera | It is already installed and trusted here; writing our own camera driver is a different project |
+| Webcam conversion runs in a worker and drops frames under load | Doing it on the page thread froze the app on this CPU |
+| No driver installs without Baron | A virtual audio cable is a system change; his decision |
 | No tagline on the social preview | Baron's call; the lockup stands on its own |
 | One mark, two colours, no gradients | Has to read at 16 px and match the flat UI |
 | SVG is the source, PNG and ICO are built | One place to change the logo; `npx electron tools/build-icons.js` rebuilds everything |
@@ -61,6 +106,12 @@ bright enough to see. The blink animation is gone.
 
 ## Open
 
+- **Phone as PC mic needs a virtual audio cable.** VB-CABLE is the usual free one. Until it is
+  installed, Mic to apps has nowhere useful to send the audio.
+- **Webcam output is tied to OBS being installed**, and the device shows up in other apps under
+  the name "OBS Virtual Camera", not FreeCast. OBS itself cannot run its own virtual camera at
+  the same time.
+- **Webcam output untested with the real phone and a real app.**
 - **Social preview is not uploaded.** Needs Baron in the repo settings, or leave it.
 - **No packaged build yet**, so the .exe itself still carries Electron's icon; the window and
   taskbar use ours.
