@@ -1,6 +1,6 @@
 # Settings that would not stick, more options, the Apple look - Monday Oct 12
 
-*Time worked: 3h 3m (5:26 PM to 8:29 PM)*
+*Time worked: 3h 6m (5:26 PM to 8:32 PM)*
 
 ## Timeline
 
@@ -123,10 +123,25 @@ was something else in that crop (the thin rim line, the light's position), it is
 Added `FREECAST_SHOT`, a debug switch that saves a picture of the window and quits, so looks
 can be checked without running the selftest and flashing its counter on his monitor.
 
+**8:30 PM - A screenshot of the kit's Toggle - Switch page: "follow this".**
+My switches were the Photo Larp ones: 46 x 28 with a round knob. The kit's are 64 x 28 with a
+wide white pill for a knob, and while pressed the knob swells into a clear glass lens that
+overhangs the track and shows the track colour through it. Disabled ones are dimmed. Rebuilt to
+that: 64 x 28 track, 39 x 24 pill, pressed lens scaled 1.4 by 1.5 with a bright rim.
+
+One wrong turn: I gave the pressed lens a `backdrop-filter` and it painted the panel's grey
+over the green track, so an "on" switch looked off while held. Plain translucent white does
+what the kit shows.
+
+Checked by capturing a debug copy with switches forced into each state (on, on and pressed,
+off and pressed) and comparing the enlarged crop with his screenshot. `FREECAST_SHOT_JS` was
+added for that: a line of script to run in the page before `FREECAST_SHOT` takes its picture.
+
 ## Decisions
 
 | Decision | Rationale |
 |---|---|
+| Switches follow the kit's Toggle page exactly, not Photo Larp's | He sent the page and said to follow it |
 | No colour gradient behind the glass | Baron's call, the same evening it went in |
 | Window radius 34, panels 24 at a 10 px inset | Concentric corners; 34 is the kit's window radius |
 | Apple glass look, components carried from Photo Larp | Baron's playbook; those components were already matched to the kit and approved |

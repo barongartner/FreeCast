@@ -372,6 +372,9 @@ function createWindows() {
   // after it loads, then quits. For checking the look without a selftest take.
   if (process.env.FREECAST_SHOT) {
     win.webContents.once('did-finish-load', () => setTimeout(async () => {
+      // FREECAST_SHOT_JS runs in the page first, to put it in the state worth looking at.
+      if (process.env.FREECAST_SHOT_JS) await win.webContents.executeJavaScript(process.env.FREECAST_SHOT_JS).catch(() => {});
+      await new Promise((r) => setTimeout(r, 600));
       fs.writeFileSync(process.env.FREECAST_SHOT, (await win.webContents.capturePage()).toPNG());
       app.quit();
     }, 5000));
