@@ -32,8 +32,12 @@ date '+%-I:%M %p'
 Apple glass, per Baron's playbook (memory `feedback_apple_gui_playbook.md`, numbers in
 `Documents\Claude\Misc\iOS 27 Kit Rules.md`, working example in `Documents\Photo Larp`).
 
-- Panels are `.glass` over a colourful backdrop (`#orbs` plus `#ambient`, a blurred copy of the
-  scene). Glass over flat dark is just grey; keep the backdrop.
+- Panels are `.glass` over a plain dark window with `#ambient`, a blurred copy of the scene,
+  behind them. No colour gradient: Baron had the drifting colour orbs removed on Oct 12.
+- Corners are concentric: window radius 34 (the kit's Window), panels inset by `--edge` with
+  radius `--radius` minus `--edge`. Change them together or the two curves stop matching.
+- `FREECAST_SHOT=<file.png>` with `FREECAST_PROFILE=<scratch dir>` saves a picture of the window
+  and quits. Use it to check the look; it does not flash the selftest counter on his screen.
 - The main window is frameless and transparent. The page clips itself to a 26 px rounded shape,
   draws the traffic lights, and has its own drag strip and resize grips. Zoom is done by hand in
   `main.js` (`toggleZoom`). After touching any of it, check zoom, restore, minimise, focus away

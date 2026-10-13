@@ -368,6 +368,14 @@ function createWindows() {
   win.setContentProtection(settings.hideFromCapture && !NO_PROTECT);
   for (const ev of ['focus', 'blur', 'maximize', 'unmaximize', 'restore']) win.on(ev, sendWindowState);
   win.webContents.on('did-finish-load', sendWindowState);
+  // Debug: FREECAST_SHOT=<file.png> saves a picture of the window a few seconds
+  // after it loads, then quits. For checking the look without a selftest take.
+  if (process.env.FREECAST_SHOT) {
+    win.webContents.once('did-finish-load', () => setTimeout(async () => {
+      fs.writeFileSync(process.env.FREECAST_SHOT, (await win.webContents.capturePage()).toPNG());
+      app.quit();
+    }, 5000));
+  }
   win.on('resized', rememberBounds);
   win.on('moved', rememberBounds);
   win.webContents.on('before-input-event', (_e, input) => {

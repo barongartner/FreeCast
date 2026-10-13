@@ -1,6 +1,6 @@
 # Settings that would not stick, more options, the Apple look - Monday Oct 12
 
-*Time worked: 3h 0m (5:26 PM to 8:26 PM)*
+*Time worked: 3h 3m (5:26 PM to 8:29 PM)*
 
 ## Timeline
 
@@ -108,10 +108,27 @@ debug copy with the corner enlarged: the corner is smooth, not stepped. Not test
 dragging the window, the eight resize grips, minimise from the yellow light, snapping to screen
 edges, and how the blur costs frames during a real take on this GPU.
 
+**Between 8:26 PM and 8:29 PM - "Get rid of gradient background", then a small screenshot of
+the window's top-left corner with no words.**
+The gradient: the three drifting colour orbs are removed, markup and styles both. Behind the
+panels is now a plain dark window with only the soft blurred copy of the scene. The gradient I
+had put on the phone's start screen went too.
+
+The corner screenshot: my reading is that the two curves did not match. The window corner was
+radius 26 and the panel inside it radius 30 at a 14 px inset, so the gap between them swelled
+through the bend. Now the window is radius 34 (the kit's Window component), panels sit 10 px in
+with radius 24, and the curves are concentric. Checked on an enlarged capture. If the complaint
+was something else in that crop (the thin rim line, the light's position), it is still open.
+
+Added `FREECAST_SHOT`, a debug switch that saves a picture of the window and quits, so looks
+can be checked without running the selftest and flashing its counter on his monitor.
+
 ## Decisions
 
 | Decision | Rationale |
 |---|---|
+| No colour gradient behind the glass | Baron's call, the same evening it went in |
+| Window radius 34, panels 24 at a 10 px inset | Concentric corners; 34 is the kit's window radius |
 | Apple glass look, components carried from Photo Larp | Baron's playbook; those components were already matched to the kit and approved |
 | Transparent frameless window, zoom done by hand | Rounded corners need transparency; maximising a transparent window is unreliable on Windows |
 | Backdrop holds still while recording | A moving backdrop re-renders every blur each frame, on the same GPU that is compositing the take |

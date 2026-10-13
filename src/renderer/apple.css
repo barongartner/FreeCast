@@ -5,7 +5,9 @@
   --blue: #0088ff; --link: #5eb0ff; --red: #ff453a; --rec: #ff4a3d; --green: #30d158; --amber: #ffcc00;
   --label: rgba(255, 255, 255, .96); --dim: rgba(235, 235, 245, .62); --faint: rgba(235, 235, 245, .34);
   --fill: rgba(120, 120, 128, .26); --fill2: rgba(120, 120, 128, .4); --line: rgba(255, 255, 255, .09);
-  --left: 300px; --right: 318px; --edge: 14px; --radius: 26px;
+  /* Window radius 34 is the kit's Window component. Panels sit --edge inside it
+     and take radius minus edge, so the two corner curves are concentric. */
+  --left: 300px; --right: 318px; --edge: 10px; --radius: 34px; --panel: calc(var(--radius) - var(--edge));
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -20,16 +22,9 @@ body.max { clip-path: none; }
 button, input, select { font: inherit; color: inherit; }
 
 /* ---- what sits behind the glass ---- */
-#orbs, #ambient { position: fixed; pointer-events: none; z-index: 0; }
-#orbs { inset: -90px; opacity: .95; }
-#orbs i { position: absolute; width: 62vmax; height: 62vmax; border-radius: 50%; filter: blur(90px); opacity: .55; }
-#orbs i:nth-child(1) { background: #1f5cff; left: -12vmax; top: -22vmax; animation: drift 26s ease-in-out infinite alternate; }
-#orbs i:nth-child(2) { background: #b235ff; right: -20vmax; top: 8vmax; animation: drift 32s ease-in-out infinite alternate-reverse; }
-#orbs i:nth-child(3) { background: #00b3a4; left: 22vmax; bottom: -34vmax; animation: drift 38s ease-in-out infinite alternate; }
-@keyframes drift { to { transform: translate(9vmax, 6vmax) scale(1.15); } }
-#ambient { left: -80px; top: -80px; width: calc(100% + 160px); height: calc(100% + 160px); filter: blur(64px) saturate(220%) brightness(1.15); opacity: .5; mix-blend-mode: screen; }
-/* While a take is running the backdrop holds still, so the blur is not re-rendered every frame. */
-body.recording #orbs i { animation-play-state: paused; }
+/* No colour gradient (Baron: "get rid of gradient background"). What is behind
+   the panels is a plain dark window with a soft, blurred copy of the scene. */
+#ambient { position: fixed; pointer-events: none; z-index: 0; left: -80px; top: -80px; width: calc(100% + 160px); height: calc(100% + 160px); filter: blur(64px) saturate(170%) brightness(.55); opacity: .9; }
 
 /* ---- liquid glass ---- */
 .glass {
@@ -61,7 +56,7 @@ body.max::after { border-radius: 0; box-shadow: none; } body.max #grips { displa
 #grips [data-g=bottomright] { right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; }
 #grips [data-g=topright] { right: 0; top: 0; width: 14px; height: 14px; cursor: nesw-resize; }
 #grips [data-g=bottomleft] { left: 0; bottom: 0; width: 14px; height: 14px; cursor: nesw-resize; }
-#lights { position: fixed; left: 34px; top: 33px; z-index: 30; display: flex; gap: 9px; }
+#lights { position: fixed; left: 31px; top: 29px; z-index: 30; display: flex; gap: 9px; }
 #lights button { width: 14px; height: 14px; min-width: 0; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .18), inset 0 1px 1px rgba(255, 255, 255, .28); transform: none; }
 #lights button:nth-child(1) { background: radial-gradient(circle at 50% 35%, #ff7a72, #f4544b); --ink: #8c1a14; }
 #lights button:nth-child(2) { background: radial-gradient(circle at 50% 35%, #ffd04f, #f6b223); --ink: #98570b; }
@@ -72,8 +67,8 @@ body.away #lights button { background: rgba(255, 255, 255, .22) !important; box-
 
 /* ---- layout ---- */
 main { position: fixed; inset: 0; z-index: 2; }
-#left, #right { position: absolute; top: var(--edge); bottom: var(--edge); display: flex; flex-direction: column; border-radius: 30px; }
-#left { left: var(--edge); width: var(--left); padding-top: 44px; }
+#left, #right { position: absolute; top: var(--edge); bottom: var(--edge); display: flex; flex-direction: column; border-radius: var(--panel); }
+#left { left: var(--edge); width: var(--left); padding-top: 42px; }
 #right { right: var(--edge); width: var(--right); }
 .scroll { position: relative; flex: 1; overflow-y: auto; padding: 4px 12px 14px; }
 .scroll::-webkit-scrollbar { width: 0; }
