@@ -76,6 +76,7 @@ const DEFAULTS = {
   port: 8443,
   token: null,
   hideFromCapture: true,
+  animations: true, // zoom glide and the genie on minimise and restore
   statusBox: 'always', // always | recording | off
   statusCorner: 'tr',
   cornerMargin: 0,
@@ -209,7 +210,7 @@ function toggleWindow() {
     win.restore();
     win.focus();
   } else if (win.isFocused()) {
-    win.minimize();
+    genieMinimize();
   } else {
     win.focus();
   }
@@ -283,26 +284,162 @@ function sendWindowState() {
 }
 
 function rememberBounds() {
-  if (!win || win.isDestroyed() || zoomed || win.isMaximized() || win.isMinimized() || SELFTEST) return;
+  if (!win || win.isDestroyed() || zoomed || glide || parked || genieBusy || win.isMaximized() || win.isMinimized() || SELFTEST) return;
   settings.window = win.getBounds();
   saveSettings();
 }
 
+// Glide the window from where it is to new bounds.
+let glide = null;
+function animateBounds(to, done) {
+  clearInterval(glide);
+  if (!settings.animations) {
+    win.setBounds(to);
+    return done && done();
+  }
+  const from = win.getBounds();
+  const started = Date.now();
+  const ms = 280;
+  glide = setInterval(() => {
+    const p = Math.min(1, (Date.now() - started) / ms);
+    const e = 1 - Math.pow(1 - p, 3); // ease out
+    const at = (k) => Math.round(from[k] + (to[k] - from[k]) * e);
+    win.setBounds({ x: at('x'), y: at('y'), width: at('width'), height: at('height') });
+    if (p >= 1) {
+      clearInterval(glide);
+      glide = null;
+      if (done) done();
+    }
+  }, 14);
+}
+
 function toggleZoom() {
   if (zoomed) {
-    win.setBounds(zoomed);
-    zoomed = null;
+    const back = zoomed;
+    animateBounds(back, () => {
+      zoomed = null;
+      sendWindowState();
+      rememberBounds();
+    });
   } else {
     zoomed = win.getBounds();
-    win.setBounds(screen.getDisplayMatching(zoomed).workArea);
+    animateBounds(screen.getDisplayMatching(zoomed).workArea, sendWindowState);
   }
   sendWindowState();
+}
+
+// ---------- genie ----------
+// Minimise and restore play on a screen-sized overlay (genie.html) that shows a
+// picture of the window being poured into the taskbar. The real window is
+// parked off screen under the overlay and then minimised. It is parked, not
+// made transparent: changing a window's opacity turns it into a layered
+// window, and capture exclusion does not hold on those.
+let genie = null;
+let genieBusy = false;
+let parked = null; // { bounds, image, display } while the window sits minimised by the genie
+
+function genieTarget(display) {
+  const b = display.bounds;
+  const w = display.workArea;
+  const barAtBottom = w.y === b.y && w.height < b.height;
+  return { x: b.width / 2, y: barAtBottom ? w.height : b.height, w: 64 };
+}
+
+function playGenie({ image, bounds, display, reverse, covered }) {
+  return new Promise((resolve) => {
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      ipcMain.removeAllListeners('genie:ready');
+      ipcMain.removeAllListeners('genie:done');
+      resolve();
+    };
+    ipcMain.once('genie:ready', () => {
+      genie.showInactive();
+      genie.setContentProtection(settings.hideFromCapture && !NO_PROTECT);
+      setTimeout(() => {
+        if (covered) covered();
+        genie.webContents.send('genie', 'go');
+      }, 40);
+    });
+    ipcMain.once('genie:done', finish);
+    setTimeout(finish, 2500); // never leave the window stranded if the overlay stalls
+    genie.setBounds(display.bounds);
+    genie.webContents.send('genie', {
+      image: image.toDataURL(),
+      rect: { x: bounds.x - display.bounds.x, y: bounds.y - display.bounds.y, w: bounds.width, h: bounds.height },
+      target: genieTarget(display),
+      reverse,
+    });
+  });
+}
+
+async function genieMinimize() {
+  if (!win || win.isDestroyed() || win.isMinimized() || genieBusy) return;
+  if (!settings.animations || !genie || SELFTEST) return win.minimize();
+  genieBusy = true;
+  try {
+    const bounds = win.getBounds();
+    const display = screen.getDisplayMatching(bounds);
+    const image = await win.webContents.capturePage();
+    await playGenie({
+      image, bounds, display, reverse: false,
+      covered: () => {
+        parked = { bounds, image, display };
+        win.setBounds({ ...bounds, x: -30000, y: -30000 });
+        win.minimize();
+      },
+    });
+  } catch (err) {
+    logLine('genie-failed', err.message);
+    if (!win.isMinimized()) win.minimize();
+  } finally {
+    genie.hide();
+    genieBusy = false;
+  }
+}
+
+// The window was just restored. If the genie put it away, it comes back parked
+// off screen: pour it back out, then move the real window into place.
+async function genieRestore() {
+  if (!parked) return;
+  const p = parked;
+  genieBusy = true;
+  try {
+    if (settings.animations && genie) {
+      let image = p.image;
+      // A fresh picture if the page can give one quickly, the old one otherwise.
+      await Promise.race([
+        win.webContents.capturePage().then((img) => { if (!img.isEmpty()) image = img; }),
+        new Promise((r) => setTimeout(r, 180)),
+      ]).catch(() => {});
+      await playGenie({ image, bounds: p.bounds, display: p.display, reverse: true });
+    }
+  } catch (err) {
+    logLine('genie-failed', err.message);
+  } finally {
+    win.setBounds(p.bounds);
+    // A restore that Windows did not hand the foreground to comes back behind
+    // other windows, and a transparent window that was minimised can come back
+    // without repainting. Raise it and force a frame.
+    win.setAlwaysOnTop(true);
+    win.setAlwaysOnTop(false);
+    win.moveTop();
+    win.webContents.invalidate();
+    parked = null;
+    setTimeout(() => {
+      if (genie && !genie.isDestroyed()) genie.hide();
+      genieBusy = false;
+      rememberBounds();
+    }, 90); // let the real window paint in place before the picture goes
+  }
 }
 
 function windowCommand(cmd) {
   if (!win || win.isDestroyed()) return;
   if (cmd === 'close') win.close();
-  else if (cmd === 'minimize') win.minimize();
+  else if (cmd === 'minimize') genieMinimize();
   else if (cmd === 'zoom') toggleZoom();
 }
 
@@ -367,7 +504,38 @@ function createWindows() {
   });
   win.setContentProtection(settings.hideFromCapture && !NO_PROTECT);
   for (const ev of ['focus', 'blur', 'maximize', 'unmaximize', 'restore']) win.on(ev, sendWindowState);
+  win.on('restore', genieRestore);
   win.webContents.on('did-finish-load', sendWindowState);
+  // Debug: FREECAST_DEMO=1 runs the window through minimise, restore, zoom and
+  // unzoom on its own and quits, so the animations can be filmed off the desktop.
+  if (process.env.FREECAST_DEMO) {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    win.webContents.once('did-finish-load', async () => {
+      // Kept above everything for the length of the demo. A window restored by a
+      // script, not by the person, comes back behind whatever they are working
+      // in, which looks exactly like it failing to come back.
+      const pin = setInterval(() => win.setAlwaysOnTop(true, 'screen-saver'), 200);
+      app.on('before-quit', () => clearInterval(pin));
+      await wait(4000);
+      if (process.env.FREECAST_DEMO === 'plain') win.minimize(); // no genie: tells a genie bug from a plain minimise bug
+      else await genieMinimize();
+      await wait(900);
+      win.restore();
+      await wait(1600);
+      if (process.env.FREECAST_DEMO === 'plain') {
+        win.hide();
+        win.show();
+        await wait(1500);
+      }
+      logLine('demo-after-restore', JSON.stringify({ bounds: win.getBounds(), visible: win.isVisible(), minimized: win.isMinimized(), focused: win.isFocused() }));
+      toggleZoom();
+      await wait(900);
+      toggleZoom();
+      await wait(900);
+      logLine('demo', JSON.stringify({ bounds: win.getBounds(), parked: !!parked, minimized: win.isMinimized() }));
+      app.quit();
+    });
+  }
   // Debug: FREECAST_SHOT=<file.png> saves a picture of the window a few seconds
   // after it loads, then quits. For checking the look without a selftest take.
   if (process.env.FREECAST_SHOT) {
@@ -413,6 +581,23 @@ function createWindows() {
   });
   hud.setAlwaysOnTop(true, 'screen-saver');
   hud.loadFile(path.join(__dirname, '..', 'renderer', 'hud.html'));
+
+  // The overlay the genie plays on. Made once and kept hidden, so the
+  // animation starts without waiting for a window to be created.
+  genie = new BrowserWindow({
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    resizable: false,
+    focusable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    webPreferences: { preload, backgroundThrottling: false },
+  });
+  genie.setAlwaysOnTop(true, 'screen-saver');
+  genie.loadFile(path.join(__dirname, '..', 'renderer', 'genie.html'));
   hud.webContents.once('did-finish-load', updateHud);
   setInterval(dodgeMouse, 100);
 

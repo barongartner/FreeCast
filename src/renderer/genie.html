@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// The genie. A screen-sized transparent window that plays a picture of the main
+// window being poured into the taskbar (or back out of it). The picture is cut
+// into thin horizontal strips. Each strip keeps its height, slides down, and is
+// squeezed to the width of a funnel that narrows from the window's own edges at
+// the top to the target at the bottom. First the funnel forms, then the window
+// slides down through it.
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const STRIPS = 140;
+  const DURATION = 520;
+  let job = null;
+
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const sine = (t) => (1 - Math.cos(Math.PI * clamp(t))) / 2;
+  const easeIn = (t) => clamp(t) * clamp(t);
+
+  function size() {
+    const k = window.devicePixelRatio || 1;
+    canvas.width = Math.round(window.innerWidth * k);
+    canvas.height = Math.round(window.innerHeight * k);
+    ctx.setTransform(k, 0, 0, k, 0, 0);
+  }
+
+  // t = 0 is the window at rest, t = 1 is fully inside the taskbar.
+  function draw(t) {
+    const { img, rect, target } = job;
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    if (t <= 0) {
+      ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h);
+      return;
+    }
+    const funnel = sine(t / 0.42);                         // how far the sides have bent in
+    const fall = easeIn((t - 0.18) / 0.82);                // how far the window has slid down
+    const span = Math.max(1, target.y - rect.y);           // top of window to the target
+    const shift = fall * span;
+    const tl = target.x - target.w / 2;
+    const tr = target.x + target.w / 2;
+    // One strip per screen pixel row. Thicker strips shift sideways in visible
+    // steps and the slanted edges come out as a staircase.
+    const strips = Math.max(STRIPS, Math.ceil(rect.h * (window.devicePixelRatio || 1)));
+    const stripH = rect.h / strips;
+    const srcH = img.naturalHeight / strips;
+    for (let i = 0; i < strips; i++) {
+      const y = rect.y + i * stripH + shift;
+      if (y >= target.y) break;                            // this strip is already in the taskbar
+      const depth = sine((y - rect.y) / span) * funnel;    // 0 at the window's top edge, 1 at the target
+      const left = lerp(rect.x, tl, depth);
+      const right = lerp(rect.x + rect.w, tr, depth);
+      const h = Math.min(stripH + 0.6, target.y - y);
+      ctx.drawImage(img, 0, i * srcH, img.naturalWidth, srcH, left, y, right - left, h);
+    }
+  }
+
+  function play() {
+    const started = performance.now();
+    const step = (now) => {
+      const p = clamp((now - started) / DURATION);
+      draw(job.reverse ? 1 - p : p);
+      if (p < 1) requestAnimationFrame(step);
+      else window.api.genieDone();
+    };
+    requestAnimationFrame(step);
+  }
+
+  window.api.onGenie((msg) => {
+    if (msg === 'go') return job && play();
+    const img = new Image();
+    img.onload = () => {
+      job = { img, rect: msg.rect, target: msg.target, reverse: msg.reverse };
+      size();
+      draw(msg.reverse ? 1 : 0);
+      // Two frames, so the first picture is really on the glass before the real window goes.
+      requestAnimationFrame(() => requestAnimationFrame(() => window.api.genieReady()));
+    };
+    img.src = msg.image;
+  });
+})();
+</script>
+</body>
+</html>

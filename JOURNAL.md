@@ -1,6 +1,6 @@
 # Settings that would not stick, more options, the Apple look - Monday Oct 12
 
-*Time worked: 3h 8m (5:26 PM to 8:34 PM)*
+*Time worked: 3h 15m (5:26 PM to 8:41 PM)*
 
 ## Timeline
 
@@ -149,10 +149,43 @@ Consequence: what he had set up only in copies I launched (status box shown only
 recording, the phone camera source and its show/hide key) did not come across. The phone source
 comes back on its own when the phone connects.
 
+**8:36 PM - "Can you give max and minimize animations and the genie animations."**
+
+- **Zoom (green light):** the window glides to the work area and back, 280 ms, ease out, by
+  stepping its bounds from the main process.
+- **Genie (yellow light, the show/hide hotkey, and restoring from the taskbar):** a picture of
+  the window is poured into the middle of the taskbar, and poured back out on restore. It plays
+  on `genie.html`, a transparent overlay the size of the screen, made once and kept hidden. The
+  picture is cut into one strip per pixel row; a funnel forms from the window's edges down to the
+  target, then the strips slide down through it. 520 ms.
+- While the overlay covers it, the real window is parked off screen and minimised. On restore it
+  comes back off screen, the genie plays in reverse, then the window is moved into place and the
+  overlay is hidden. Parked, not made transparent: changing opacity turns a window into a layered
+  one, and capture exclusion does not hold on those.
+- Settings has a Window animations switch. With it off, minimise and zoom are instant.
+
+How it was checked: `FREECAST_DEMO=1` runs a debug copy through minimise, restore, zoom and
+unzoom while ffmpeg films the desktop; I read the frames.
+
+What that turned up:
+
+1. After the reverse genie the window was gone. It looked like the transparent window was
+   failing to repaint, and I chased that. It was not: a window restored by a script, not by a
+   click, does not get the foreground, so it came back behind the full-screen app Baron was
+   working in. Pinning the demo window on top showed the whole sequence working. The restore
+   path now raises the window anyway.
+2. The first genie had stair-stepped edges, from 140 thick strips. One strip per pixel row
+   fixed it.
+
+Not tested: the genie with the taskbar on a side or the top (it aims at the bottom), on a
+second monitor of a different size, and during a real recording. Opt-out is the switch.
+
 ## Decisions
 
 | Decision | Rationale |
 |---|---|
+| Genie plays on an overlay; the real window is parked off screen | The window cannot be warped itself, and it must never become a layered window |
+| Genie aims at the middle of the taskbar | Windows gives no simple way to ask where an app's taskbar button is |
 | Launch for Baron through Explorer, not straight from the shell | A direct launch runs inside the Claude package and sees the wrong AppData |
 | Switches follow the kit's Toggle page exactly, not Photo Larp's | He sent the page and said to follow it |
 | No colour gradient behind the glass | Baron's call, the same evening it went in |

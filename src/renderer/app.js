@@ -759,6 +759,7 @@
     const hudCorner = dropdown([{ value: 'tr', label: 'Top right' }, { value: 'tl', label: 'Top left' }, { value: 'br', label: 'Bottom right' }, { value: 'bl', label: 'Bottom left' }],
       settings.statusCorner, (v) => save({ statusCorner: v }));
     const margin = h('input', { type: 'number', min: 0, max: 300, step: 4, value: settings.cornerMargin, oninput: () => { const v = Math.max(0, +margin.value || 0); Scene.setMargin(v); save({ cornerMargin: v }); } });
+    const anim = h('input', { type: 'checkbox', checked: settings.animations, onchange: () => save({ animations: anim.checked }) });
     const hide =h('input', { type: 'checkbox', checked: settings.hideFromCapture, onchange: () => save({ hideFromCapture: hide.checked }) });
     const delay = h('input', { type: 'number', min: 0, max: 1000, step: 10, value: settings.audio.mic.delayMs, oninput: () => { settings.audio.mic.delayMs = +delay.value || 0; Mixer.setDelay('mic', settings.audio.mic.delayMs); saveAudio(); } });
     const ns = h('input', { type: 'checkbox', checked: settings.audio.mic.ns, onchange: () => { settings.audio.mic.ns = ns.checked; saveAudio(); applyMic(); } });
@@ -806,6 +807,7 @@
       h('p', { class: 'hint' }, 'The status box sits on your monitor, never in the video, and jumps out of the way when the mouse reaches it.'),
       h('h3', {}, 'Other'),
       field('Corner margin (px)', h('div', { class: 'row' }, margin, h('span', { class: 'hint', style: 'margin:0' }, 'Gap the corner buttons and keys leave'))),
+      field('Window animations', h('label', { class: 'row' }, anim, h('span', {}, 'Zoom glide, genie on minimise'))),
       field('Hide FreeCast', h('label', { class: 'row' }, hide, h('span', {}, 'Keep this window out of the recording'))),
       field('Mic delay (ms)', h('div', { class: 'row' }, delay, h('span', { class: 'hint', style: 'margin:0' }, 'Raise it if your voice leads your lips'))),
       field('Mic cleanup', h('label', { class: 'row' }, ns, h('span', {}, 'Noise suppression'))),

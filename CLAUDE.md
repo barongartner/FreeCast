@@ -36,6 +36,13 @@ Apple glass, per Baron's playbook (memory `feedback_apple_gui_playbook.md`, numb
   behind them. No colour gradient: Baron had the drifting colour orbs removed on Oct 12.
 - Corners are concentric: window radius 34 (the kit's Window), panels inset by `--edge` with
   radius `--radius` minus `--edge`. Change them together or the two curves stop matching.
+- Minimise and restore play the genie on `src/renderer/genie.html`, an overlay window; zoom
+  glides. Both are in `main.js`. Never use `setOpacity` or `setIgnoreMouseEvents` on the main
+  window to hide it: either makes it a layered window and it starts showing up in recordings.
+- `FREECAST_DEMO=1` (with `FREECAST_PROFILE` and `FREECAST_NO_PROTECT=1`) runs minimise,
+  restore, zoom and unzoom by itself and quits. Film it with
+  `ffmpeg -f gdigrab -framerate 60 -t 8 -i desktop` and read the frames. A window that seems to
+  vanish after a scripted restore is usually just behind Baron's foreground app.
 - `FREECAST_SHOT=<file.png>` with `FREECAST_PROFILE=<scratch dir>` saves a picture of the window
   and quits. Use it to check the look; it does not flash the selftest counter on his screen.
 - The main window is frameless and transparent. The page clips itself to a 26 px rounded shape,
