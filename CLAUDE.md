@@ -27,6 +27,23 @@ date '+%A %b %-d'
 date '+%-I:%M %p'
 ```
 
+## Look
+
+Apple glass, per Baron's playbook (memory `feedback_apple_gui_playbook.md`, numbers in
+`Documents\Claude\Misc\iOS 27 Kit Rules.md`, working example in `Documents\Photo Larp`).
+
+- Panels are `.glass` over a colourful backdrop (`#orbs` plus `#ambient`, a blurred copy of the
+  scene). Glass over flat dark is just grey; keep the backdrop.
+- The main window is frameless and transparent. The page clips itself to a 26 px rounded shape,
+  draws the traffic lights, and has its own drag strip and resize grips. Zoom is done by hand in
+  `main.js` (`toggleZoom`). After touching any of it, check zoom, restore, minimise, focus away
+  and back, drag, and every edge. The selftest covers zoom and restore only.
+- Capture exclusion still has to hold. The selftest proves it: FreeCast must not appear in the
+  frames of its own recording.
+- Do not name a body class after a component class. `body.rec` once inherited the Record
+  button's styles and painted the whole window red.
+- Accent is `#0088ff`. Red is for recording only.
+
 ## House rules
 
 - ASCII only in repo files. No em dashes or en dashes; use the punctuation the sentence needs.
@@ -60,7 +77,8 @@ asked for a relaunch.
 | `src/renderer/recorder.js` | MediaRecorder on the canvas, chunks streamed to disk |
 | `src/main/vcam.js` | Writes NV12 frames into the OBS Virtual Camera shared-memory queue (koffi, kernel32) |
 | `src/renderer/vcam.js` | Picks phone camera or scene, converts to NV12 in a worker, hands frames to main |
-| `src/renderer/ui.js` | DOM helper, in-page dropdown and colour swatches, key combo capture |
+| `src/renderer/ui.js` | DOM helper, in-page dropdown, segmented control, grouped rows, colour swatches, key combo capture |
+| `src/renderer/apple.css` | The whole look: glass panels, Mac window chrome, kit-sized controls |
 | `src/renderer/app.js` | UI wiring, settings, selftest driver |
 | `src/phone/phone.html` | The page the phone opens from the QR code |
 | `assets/*.svg` | Logo sources: `logo` (mark), `icon` and `icon-small` (app tile), `lockup` (mark plus wordmark), `-dark` variants for light backgrounds |

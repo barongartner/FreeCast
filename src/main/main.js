@@ -115,6 +115,7 @@ const DEFAULTS = {
   },
   vcam: { on: false, source: 'phone' }, // phone | scene
   scene: null,
+  window: null, // last position and size of the main window
 };
 
 let settings = null;
@@ -263,22 +264,112 @@ function nextName(dir, pattern) {
   }
 }
 
+// ---------- window chrome ----------
+// The window is frameless, so close, minimise, zoom and edge resizing are
+// driven from the page. Zoom is done by hand (fill the work area, remember the
+// old bounds) because maximising a transparent window is unreliable on Windows.
+const MIN_W = 1180;
+const MIN_H = 720;
+let zoomed = null; // the bounds to go back to while the window fills the screen
+let resizing = null;
+
+function onSomeDisplay(b) {
+  return screen.getAllDisplays().some((d) => b.x < d.workArea.x + d.workArea.width - 80 && b.x + b.width > d.workArea.x + 80 && b.y >= d.workArea.y - 10 && b.y < d.workArea.y + d.workArea.height - 60);
+}
+
+function sendWindowState() {
+  if (!win || win.isDestroyed()) return;
+  send('win:state', { focused: win.isFocused(), maximized: !!zoomed || win.isMaximized() });
+}
+
+function rememberBounds() {
+  if (!win || win.isDestroyed() || zoomed || win.isMaximized() || win.isMinimized() || SELFTEST) return;
+  settings.window = win.getBounds();
+  saveSettings();
+}
+
+function toggleZoom() {
+  if (zoomed) {
+    win.setBounds(zoomed);
+    zoomed = null;
+  } else {
+    zoomed = win.getBounds();
+    win.setBounds(screen.getDisplayMatching(zoomed).workArea);
+  }
+  sendWindowState();
+}
+
+function windowCommand(cmd) {
+  if (!win || win.isDestroyed()) return;
+  if (cmd === 'close') win.close();
+  else if (cmd === 'minimize') win.minimize();
+  else if (cmd === 'zoom') toggleZoom();
+}
+
+// A grip was pressed: follow the cursor until it is released.
+function resizeStart(edge) {
+  resizeEnd();
+  if (zoomed) return;
+  const from = { cursor: screen.getCursorScreenPoint(), bounds: win.getBounds() };
+  resizing = setInterval(() => {
+    const c = screen.getCursorScreenPoint();
+    const dx = c.x - from.cursor.x;
+    const dy = c.y - from.cursor.y;
+    const b = { ...from.bounds };
+    if (edge.includes('right')) b.width = Math.max(MIN_W, from.bounds.width + dx);
+    if (edge.includes('bottom')) b.height = Math.max(MIN_H, from.bounds.height + dy);
+    if (edge.includes('left')) {
+      b.width = Math.max(MIN_W, from.bounds.width - dx);
+      b.x = from.bounds.x + from.bounds.width - b.width;
+    }
+    if (edge.includes('top')) {
+      b.height = Math.max(MIN_H, from.bounds.height - dy);
+      b.y = from.bounds.y + from.bounds.height - b.height;
+    }
+    win.setBounds(b);
+  }, 16);
+}
+
+function resizeEnd() {
+  if (!resizing) return;
+  clearInterval(resizing);
+  resizing = null;
+  rememberBounds();
+}
+
 function createWindows() {
   const preload = path.join(__dirname, 'preload.js');
+  // No title bar and a transparent window, so the page can draw Mac-style
+  // chrome with rounded corners. The page clips itself to the rounded shape.
+  const saved = !SELFTEST && settings.window && onSomeDisplay(settings.window) ? settings.window : null;
   win = new BrowserWindow({
-    width: 1500,
-    height: 900,
-    minWidth: 1100,
-    minHeight: 680,
-    backgroundColor: '#0e0e10',
+    width: saved ? saved.width : 1500,
+    height: saved ? saved.height : 900,
+    x: saved ? saved.x : undefined,
+    y: saved ? saved.y : undefined,
+    minWidth: MIN_W,
+    minHeight: MIN_H,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
     title: 'FreeCast',
     icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),
     show: false,
     webPreferences: { preload, backgroundThrottling: false },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), SELFTEST ? { query: { selftest: '1' } } : undefined);
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    win.show();
+    // Set again once visible: display affinity does not always stick to a hidden window.
+    win.setContentProtection(settings.hideFromCapture && !NO_PROTECT);
+    sendWindowState();
+  });
   win.setContentProtection(settings.hideFromCapture && !NO_PROTECT);
+  for (const ev of ['focus', 'blur', 'maximize', 'unmaximize', 'restore']) win.on(ev, sendWindowState);
+  win.webContents.on('did-finish-load', sendWindowState);
+  win.on('resized', rememberBounds);
+  win.on('moved', rememberBounds);
   win.webContents.on('before-input-event', (_e, input) => {
     if (input.type === 'keyDown' && input.key === 'F12') win.webContents.toggleDevTools();
   });
@@ -389,6 +480,9 @@ function setupIpc() {
     flushSettings();
     e.returnValue = true;
   });
+  ipcMain.on('win:command', (_e, cmd) => windowCommand(cmd));
+  ipcMain.on('win:resize-start', (_e, edge) => resizeStart(String(edge)));
+  ipcMain.on('win:resize-end', resizeEnd);
   ipcMain.on('log', (_e, kind, detail) => logLine(String(kind), String(detail).slice(0, 2000)));
 
   // While the settings sheet is listening for a new combo, the old bindings
@@ -498,6 +592,8 @@ function setupIpc() {
     if (!SELFTEST) return null;
     if (cmd === 'minimize') win.minimize();
     if (cmd === 'restore') win.restore();
+    if (cmd === 'zoom') toggleZoom();
+    if (cmd === 'bounds') return { ...win.getBounds(), zoomed: !!zoomed, work: screen.getPrimaryDisplay().workArea };
     if (cmd === 'marker') addMarker(data || 0);
     if (cmd === 'shot') {
       const img = await win.webContents.capturePage();

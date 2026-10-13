@@ -3,19 +3,21 @@
 <head>
 <meta charset="utf-8">
 <title>FreeCast</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="apple.css">
 </head>
 <body>
-<header id="top">
-  <div class="brand"><img class="mark" src="../../assets/logo.svg" alt="">FreeCast</div>
-  <button id="phonePill" class="pill"><span class="dot"></span><span id="phoneText">Phone not connected</span></button>
-  <div class="spacer"></div>
-  <span id="warn" class="warn"></span>
-  <button id="btnSettings" class="ghost">Settings</button>
-</header>
+<!-- What sits behind the glass: drifting colour, plus a blurred live copy of the scene. -->
+<div id="orbs"><i></i><i></i><i></i></div>
+<canvas id="ambient" width="96" height="54"></canvas>
+
+<!-- The window has no title bar. This strip drags it, the grips resize it, the lights close, minimise and zoom. -->
+<div id="dragbar"></div>
+<div id="grips"><i data-g="top"></i><i data-g="left"></i><i data-g="right"></i><i data-g="bottom"></i><i data-g="topleft"></i><i data-g="topright"></i><i data-g="bottomleft"></i><i data-g="bottomright"></i></div>
+<div id="lights"><button data-win="close" aria-label="Close"><svg viewBox="0 0 14 14"><path d="M4.3 4.3l5.4 5.4M9.7 4.3l-5.4 5.4" fill="none" stroke-width="1.7" stroke-linecap="round"/></svg></button><button data-win="minimize" aria-label="Minimize"><svg viewBox="0 0 14 14"><path d="M3.5 7h7" fill="none" stroke-width="1.9" stroke-linecap="round"/></svg></button><button data-win="zoom" aria-label="Zoom"><svg viewBox="0 0 14 14"><path d="M4.2 4.2h4.400L4.2 8.600zM9.800 9.800H5.400l4.400-4.400z" stroke="none"/></svg></button></div>
 
 <main>
-  <aside id="left">
+  <aside id="left" class="glass">
+   <div class="scroll">
     <section class="panel grow">
       <div class="panel-head">
         <h2>Sources</h2>
@@ -41,35 +43,44 @@
       <div class="panel-head"><h2>Phone as PC webcam</h2></div>
       <div id="vcamRows"></div>
     </section>
+   </div>
   </aside>
 
   <section id="center">
+    <header id="top" class="glass capsule">
+      <div class="brand"><img class="mark" src="../../assets/logo.svg" alt="">FreeCast</div>
+      <span class="vsep"></span>
+      <button id="phonePill" class="pill"><span class="dot"></span><span id="phoneText">Phone not connected</span></button>
+      <button id="btnSettings" class="tool">Settings</button>
+    </header>
+    <div id="warn" class="warn"></div>
     <div id="stageWrap">
       <div id="stage">
         <canvas id="out" width="1920" height="1080"></canvas>
         <canvas id="overlay" width="1920" height="1080" tabindex="0"></canvas>
       </div>
     </div>
-    <footer id="bar">
+    <footer id="bar" class="glass capsule">
       <button id="btnRec" class="rec"><span class="rec-dot"></span><span id="recLabel">Record</span></button>
       <span id="recTime">0:00</span>
       <div id="markerBtns"></div>
-      <div class="spacer"></div>
       <div id="result"></div>
     </footer>
   </section>
 
-  <aside id="right">
+  <aside id="right" class="glass">
+   <div class="scroll">
     <section class="panel grow">
       <div class="panel-head"><h2>Properties</h2></div>
       <div id="props"><p class="hint">Select a source on the canvas.</p></div>
     </section>
+   </div>
   </aside>
 </main>
 
 <div id="modal" class="modal" hidden>
-  <div class="sheet">
-    <div class="sheet-head"><h2 id="modalTitle"></h2><button id="modalClose" class="ghost">Close</button></div>
+  <div class="sheet glass">
+    <div class="sheet-head"><h2 id="modalTitle"></h2><button id="modalClose" class="primary">Done</button></div>
     <div id="modalBody"></div>
   </div>
 </div>

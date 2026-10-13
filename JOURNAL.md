@@ -1,6 +1,6 @@
-# Settings that would not stick, more options, custom output paths - Monday Oct 12
+# Settings that would not stick, more options, the Apple look - Monday Oct 12
 
-*Time worked: 6m (5:26 PM to 5:32 PM)*
+*Time worked: 3h 0m (5:26 PM to 8:26 PM)*
 
 ## Timeline
 
@@ -60,16 +60,73 @@ illegal characters are stripped. Looked at the Settings sheet in a screenshot. N
 migration itself (it only runs for real on Baron's first launch), frame rates above 30 in an
 actual take, and the phone options.
 
+**8:18 PM - Relayed from the Photo Larp session: redo the GUI in the Apple look.**
+Not typed here by Baron. The Photo Larp session passed on his words, "tell the remote control
+claude code chat to update it", said right after the Apple GUI playbook was saved. Both of us
+read "it" as FreeCast's interface. The app was not running, so nothing of his was restarted.
+
+Read first: the playbook, the Photo Larp retrospective, Photo Larp's stylesheet, and the kit
+rules for text styles, colours, lists, menus, segmented controls, sliders, toggles and windows.
+I did not open the Figma pages in his Chrome. The components here are the ones Photo Larp
+already matched against the kit and he approved, carried over, plus kit numbers for the rest.
+
+What changed:
+
+- **`src/renderer/apple.css`** replaces `styles.css`. Glass panels with a bright rim, over three
+  drifting colour orbs and a blurred live copy of the scene. Left panel, right inspector, a top
+  capsule (logo, phone status, Settings) and a bottom capsule (Record, timer, markers).
+- **Controls:** capsule buttons, grouped rows with hairline separators, toggle switches in place
+  of checkboxes, sliders with a filled track and a pill knob, pop-up buttons with up and down
+  chevrons, menus as glass popovers with a tick on the current item and a blue highlight, a
+  sliding segmented control for the source shape, sheets with a blurred scrim and a Done button.
+- **Colour:** accent blue `#0088ff` for selection, focus, sliders and primary buttons; green for
+  switches; red kept for recording. Selection handles on the canvas are blue, guides yellow.
+- **Window:** frameless and transparent with 26 px corners, Mac traffic lights (x, bar, split
+  square, dark shade of each colour on hover, grey when the window is not focused), a drag strip
+  across the top, grips on every edge and corner. Zoom fills the work area and returns to the
+  exact old bounds. Window position and size are now remembered.
+- **Phone page:** glass capsule controls and a blue Start button.
+- The status box was left as it is: he asked for that navy box specifically.
+
+Problems on the way:
+
+1. The first screenshot was a solid red window. I had put a `rec` class on `body` to pause the
+   backdrop while recording, and `.rec` is the Record button's class, so the body took the
+   button's red gradient and 42 px height. Renamed to `recording`.
+2. Dropdown menus opened behind the Settings sheet. Raised above it.
+3. The backdrop was nearly black, so the glass read as grey. Orbs turned up, and the scene copy
+   is blended on top instead of replacing them.
+
+The risk I checked before anything else: capture exclusion on a transparent window. Earlier it
+failed to stick on a click-through window. It holds here: the selftest's recording does not
+contain FreeCast.
+
+**8:26 PM - Checked.**
+Selftest passes: recording fine, zoom fills the work area, restore returns the exact bounds,
+log empty. Looked at the main window, Settings with a menu open, and a real desktop grab of a
+debug copy with the corner enlarged: the corner is smooth, not stepped. Not tested by hand:
+dragging the window, the eight resize grips, minimise from the yellow light, snapping to screen
+edges, and how the blur costs frames during a real take on this GPU.
+
 ## Decisions
 
 | Decision | Rationale |
 |---|---|
+| Apple glass look, components carried from Photo Larp | Baron's playbook; those components were already matched to the kit and approved |
+| Transparent frameless window, zoom done by hand | Rounded corners need transparency; maximising a transparent window is unreliable on Windows |
+| Backdrop holds still while recording | A moving backdrop re-renders every blur each frame, on the same GPU that is compositing the take |
+| Status box left navy and square | He specified it two days ago; a rounded one needs a transparent window, and that window has to stay out of the capture |
 | Profile in `~\.freecast`, not AppData | AppData is redirected for processes started from a packaged app; two profiles is how settings "did not save" |
 | Keep a log file | A crash with nothing written down cannot be diagnosed |
 | File names are a pattern with tokens | Covers dated folders and custom names without a save dialog per take |
 
 ## Open
 
+- **Window handling needs his hands.** Drag, the eight grips, minimise, snap. If native snap to
+  screen edges misbehaves on the transparent window, that is the place to look.
+- **Glass cost during a take is unmeasured.** If recordings stutter with the window visible,
+  drop the blur while recording.
+- **"It" was read as FreeCast's interface.** If he meant something else, this was the wrong job.
 - **The crash is not diagnosed.** Waiting on a description, or on the next one landing in
   `freecast.log`.
 - **High frame rates are offered, not proven.** The compositor and encoder share one old CPU.

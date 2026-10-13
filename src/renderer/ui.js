@@ -67,6 +67,57 @@ const UI = (() => {
     return btn;
   }
 
+  // Segmented control: options are { value, label } pairs.
+  function segment(options, value, onChange) {
+    const el = h('div', { class: 'segment' });
+    const set = (v) => {
+      const i = Math.max(0, options.findIndex((o) => o.value === v));
+      el.style.setProperty('--i', i);
+      [...el.children].forEach((b, k) => b.classList.toggle('on', k === i));
+    };
+    el.style.setProperty('--n', options.length);
+    for (const o of options) el.append(h('button', { type: 'button', onclick: () => { set(o.value); onChange(o.value); } }, o.label));
+    set(value);
+    return el;
+  }
+
+  // Sliders draw their filled part from --p. Kept in step for every slider on
+  // the page, however it was created or changed.
+  const paintRange = (r) => {
+    const min = +r.min || 0;
+    const max = r.max === '' ? 100 : +r.max;
+    r.style.setProperty('--p', `${max > min ? ((r.value - min) / (max - min)) * 100 : 0}%`);
+  };
+  document.addEventListener('input', (e) => { if (e.target.type === 'range') paintRange(e.target); }, true);
+  new MutationObserver((list) => {
+    for (const m of list) {
+      for (const n of m.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        if (n.type === 'range') paintRange(n);
+        n.querySelectorAll && n.querySelectorAll('input[type=range]').forEach(paintRange);
+      }
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
+  // Collects consecutive rows into rounded groups, the way a settings list is
+  // laid out. Headings, hints, buttons and anything else end the group.
+  function grouped(nodes) {
+    const out = [];
+    let group = null;
+    for (const n of nodes.flat()) {
+      if (!n) continue;
+      const isRow = n.classList && ['field', 'keyrow', 'markrow', 'grid2', 'grid4', 'grid5'].some((c) => n.classList.contains(c));
+      if (isRow) {
+        if (!group) out.push((group = h('div', { class: 'group' })));
+        group.append(n);
+      } else {
+        group = null;
+        if (!(n.classList && n.classList.contains('sep'))) out.push(n);
+      }
+    }
+    return out;
+  }
+
   const COLORS = ['#ffffff', '#000000', '#ff4a3d', '#ffb020', '#3ddc84', '#4aa8ff', '#b06cff', '#ff6ad5'];
   function swatches(value, onChange) {
     const hex = h('input', { type: 'text', class: 'hex', value, maxlength: 7, spellcheck: 'false' });
@@ -113,5 +164,5 @@ const UI = (() => {
     return [...mods, key].join('+');
   }
 
-  return { h, dropdown, swatches, accelFrom, closeMenus };
+  return { h, dropdown, segment, grouped, swatches, accelFrom, closeMenus };
 })();

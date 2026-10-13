@@ -21,12 +21,18 @@
   #status { font-weight: 600; }
   #detail { margin-left: auto; color: #c9c9d1; font-size: 13px; }
   #bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 16px calc(env(safe-area-inset-bottom) + 14px); display: flex; gap: 10px; background: linear-gradient(#0000, #000c); }
-  button, select { flex: 1; height: 48px; border: 1px solid #3a3a42; border-radius: 10px; background: #1b1b1fd9; color: #f2f2f3; font: inherit; font-weight: 600; }
-  button.on { background: #ff4a3d; border-color: #ff4a3d; }
+  /* Glass capsules, sized from the iOS kit: 48 high, semibold 17, accent blue. */
+  button, select { flex: 1; min-width: 0; height: 48px; padding: 0 8px; border: 0; border-radius: 999px; color: #fff; font: 600 15px/1 -apple-system, "Segoe UI", sans-serif; letter-spacing: -.23px; text-align: center; text-align-last: center; -webkit-appearance: none; appearance: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .04)), rgba(30, 30, 38, .55);
+    -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), inset 0 0 0 1px rgba(255, 255, 255, .1), 0 8px 24px rgba(0, 0, 0, .3); }
+  button:active { transform: scale(.97); }
+  button.on { background: #0088ff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35); }
   #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 32px; text-align: center; background: #0e0e10; }
   #start h1 { margin: 0; font-size: 26px; }
   #start p { margin: 0; color: #9a9aa3; line-height: 1.45; max-width: 320px; }
-  #go { flex: none; width: 220px; height: 56px; background: #ff4a3d; border-color: #ff4a3d; font-size: 17px; }
+  #go { flex: none; width: 240px; height: 50px; background: #0088ff; font-size: 17px; letter-spacing: -.43px; box-shadow: none; }
+  #start { background: radial-gradient(120% 80% at 20% 0%, #1f3fa8 0%, transparent 60%), radial-gradient(110% 80% at 100% 100%, #6a2bb8 0%, transparent 60%), #0b0b10 !important; }
   #err { color: #ff8a80; }
 </style>
 </head>

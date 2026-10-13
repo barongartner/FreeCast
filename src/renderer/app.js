@@ -17,7 +17,7 @@
   };
   const KIND = { screen: 'Screen', window: 'Window', phone: 'Phone', camera: 'Camera', image: 'Image' };
 
-  const { h, dropdown, swatches, accelFrom } = UI;
+  const { h, dropdown, segment, grouped, swatches, accelFrom } = UI;
   const isCam = (s) => s.type === 'phone' || s.type === 'camera';
   const cams = () => Scene.list().filter(isCam);
 
@@ -81,6 +81,27 @@
     const list = await api.listSources();
     for (const s of Scene.list()) if (s.type === 'screen' || s.type === 'window' || s.type === 'camera') await acquire(s, list);
   }
+
+  // ---------- window chrome ----------
+  // No title bar: the three lights and the edge grips talk to the main process.
+  const ambient = $('ambient').getContext('2d');
+  let ambientTick = 1e9;
+  document.querySelectorAll('#lights button').forEach((b) => (b.onclick = () => api.windowCommand(b.dataset.win)));
+  document.querySelectorAll('#grips i').forEach((g) => {
+    g.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      g.setPointerCapture(e.pointerId);
+      api.resizeStart(g.dataset.g);
+      const end = () => { api.resizeEnd(); g.removeEventListener('pointerup', end); g.removeEventListener('pointercancel', end); };
+      g.addEventListener('pointerup', end);
+      g.addEventListener('pointercancel', end);
+    });
+  });
+  api.onWindowState((s) => {
+    document.body.classList.toggle('away', !s.focused);
+    document.body.classList.toggle('max', !!s.maximized);
+    layoutStage();
+  });
 
   // ---------- modal ----------
   function openModal(title, body, cls = '') {
@@ -215,8 +236,8 @@
       const input = h('input', { type: 'range', min, max, step, value, oninput: () => { const v = parseFloat(input.value); out.textContent = show(v); fn(v); changed(); } });
       return h('div', { class: 'row' }, input, out);
     };
-    const shape = dropdown([{ value: 'rect', label: 'Rectangle' }, { value: 'round', label: 'Rounded' }, { value: 'circle', label: 'Circle' }], s.shape,
-      (v) => { Scene.setShape(s, v); changed(); renderProps(); });
+    const shape = segment([{ value: 'rect', label: 'Square' }, { value: 'round', label: 'Rounded' }, { value: 'circle', label: 'Circle' }], s.shape,
+      (v) => { Scene.setShape(s, v); changed(); setTimeout(renderProps, 260); }); // let the thumb finish sliding before the panel redraws
     const name = h('input', { type: 'text', value: s.name, oninput: () => { s.name = name.value; renderList(); saveScene(); } });
     const color = swatches(s.borderColor, (c) => { s.borderColor = c; changed(); });
     const cropping = Scene.cropping() === s.id;
@@ -245,13 +266,13 @@
     });
     const check = (label, key) => {
       const box = h('input', { type: 'checkbox', checked: s[key], onchange: () => { s[key] = box.checked; changed(); } });
-      return h('label', { class: 'row' }, box, h('span', {}, label));
+      return h('div', { class: 'field' }, h('label', {}, label), box);
     };
     const relink = s.type === 'screen' || s.type === 'window'
       ? h('button', { class: 'small', onclick: () => pickCapture(s.type, (x, list) => { s.ref = { id: x.id, name: x.name, displayId: x.displayId }; s.name = x.name; acquire(s, list); renderList(); }) }, 'Change source')
       : null;
 
-    $('props').replaceChildren(...[
+    $('props').replaceChildren(...grouped([
       h('div', { class: 'field' }, h('label', {}, 'Name'), name),
       h('div', { class: 'grid2' }, xl, yl, wl, hl),
       h('div', { class: 'grid4' }, act('Fit', Scene.fit), act('Fill', Scene.fill), act('Center', Scene.center), act('Full size', (x) => { const n = Scene.natural(x); if (n) { x.w = n.w * (1 - x.crop.l - x.crop.r); x.h = n.h * (1 - x.crop.t - x.crop.b); Scene.center(x); } })),
@@ -261,18 +282,20 @@
       h('div', { class: 'field' }, h('label', {}, 'Crop'), cropBtn),
       h('div', { class: 'grid5' }, aspect('None', null), aspect('16:9', 16 / 9), aspect('4:3', 4 / 3), aspect('1:1', 1), aspect('9:16', 9 / 16)),
       h('div', { class: 'grid2' }, pct('L', 'l'), pct('R', 'r'), pct('T', 't'), pct('B', 'b')),
-      h('p', { class: 'hint', style: 'margin:0 2px 8px' }, cropping ? 'Drag the handles or slide the window. Enter when done.' : 'Crop values are percent. Double-click a source to crop it on the canvas.'),
+      h('p', { class: 'hint', style: 'margin:-4px 6px 12px' }, cropping ? 'Drag the handles or slide the window. Enter when done.' : 'Crop values are percent. Double-click a source to crop it on the canvas.'),
       h('div', { class: 'sep' }),
       h('div', { class: 'field' }, h('label', {}, 'Shape'), shape),
       s.shape === 'round' ? h('div', { class: 'field' }, h('label', {}, 'Radius'), range(0, 200, 1, s.radius, (v) => (s.radius = v))) : null,
       h('div', { class: 'field' }, h('label', {}, 'Border'), range(0, 24, 1, s.borderW, (v) => (s.borderW = v))),
-      h('div', { class: 'field', style: 'grid-template-columns:1fr' }, color),
+      h('div', { class: 'field' }, color),
       h('div', { class: 'field' }, h('label', {}, 'Opacity'), range(0.1, 1, 0.01, s.opacity, (v) => (s.opacity = v), (v) => Math.round(v * 100))),
-      h('div', { class: 'field' }, h('label', {}, 'Options'), h('div', { class: 'row' }, check('Mirror', 'mirror'), check('Lock', 'locked'))),
+      h('div', { class: 'sep' }),
+      check('Mirror', 'mirror'),
+      check('Lock in place', 'locked'),
       h('div', { class: 'field' }, h('label', {}, 'Show/hide key'), sourceKey),
       h('div', { class: 'sep' }),
       h('div', { class: 'grid2' }, relink, h('button', { class: 'small danger', onclick: () => Scene.remove(s.id) }, 'Remove')),
-    ].filter(Boolean));
+    ]));
   }
 
   function syncGeo() {
@@ -540,6 +563,7 @@
   Recorder.onState((state, extra = {}) => {
     const btn = $('btnRec');
     btn.classList.toggle('on', state === 'recording');
+    document.body.classList.toggle('recording', state === 'recording');
     btn.disabled = state === 'starting' || state === 'finalizing';
     $('recLabel').textContent = state === 'recording' ? 'Stop' : state === 'finalizing' ? 'Saving' : 'Record';
     $('recTime').classList.toggle('on', state === 'recording');
@@ -753,12 +777,12 @@
     const sourceRows = Scene.list().map((s) => h('div', { class: 'keyrow' }, h('label', {}, 'Show or hide ' + s.name),
       keycap(() => (hk.sources || {})[s.id] || '', (v) => { hk.sources = { ...(hk.sources || {}) }; if (v) hk.sources[s.id] = v; else delete hk.sources[s.id]; })));
 
-    openModal('Settings', [
+    openModal('Settings', grouped([
       h('h3', {}, 'Output'),
       field('Folder', h('div', { class: 'row' }, dir, h('button', { style: 'flex:none', onclick: async () => { const p = await api.pickDir(); if (p) { dir.value = p; await save({ outputDir: p }); showPreview(); } } }, 'Browse'))),
       field('File name', base),
-      h('p', { class: 'hint', style: 'margin:0 0 6px 158px' }, 'Type or paste any folder. Name tokens: {n} counter, {date} Oct 12, {isodate} 2026-10-12, {time} 5-26 PM. A slash makes a subfolder, like {date}/Devlog {n}.'),
-      h('div', { style: 'margin:0 0 12px 158px' }, preview),
+      h('p', { class: 'hint' }, 'Type or paste any folder. Name tokens: {n} counter, {date} Oct 12, {isodate} 2026-10-12, {time} 5-26 PM. A slash makes a subfolder, like {date}/Devlog {n}.'),
+      h('div', { style: 'margin:0 0 4px' }, preview),
       h('h3', {}, 'Video'),
       field('Canvas size', size),
       field('Custom size', h('div', { class: 'row' }, customW, customH, applyCustom)),
@@ -785,7 +809,7 @@
       field('Hide FreeCast', h('label', { class: 'row' }, hide, h('span', {}, 'Keep this window out of the recording'))),
       field('Mic delay (ms)', h('div', { class: 'row' }, delay, h('span', { class: 'hint', style: 'margin:0' }, 'Raise it if your voice leads your lips'))),
       field('Mic cleanup', h('label', { class: 'row' }, ns, h('span', {}, 'Noise suppression'))),
-    ].filter(Boolean), 'settings');
+    ]), 'settings');
   }
   $('btnSettings').onclick = showSettings;
 
@@ -799,6 +823,12 @@
       Scene.draw();
       Vcam.tick();
       if (!document.hidden) Scene.drawOverlay();
+      // The backdrop behind the glass is a tiny copy of the scene, refreshed
+      // about once a second (every few seconds while recording) and blurred in CSS.
+      if (++ambientTick >= settings.canvas.fps * (Recorder.state() === 'recording' ? 4 : 1)) {
+        ambientTick = 0;
+        if (!document.hidden) ambient.drawImage(Scene.canvas, 0, 0, 96, 54);
+      }
     };
     try {
       const src = 'let t;onmessage=e=>{clearInterval(t);t=setInterval(()=>postMessage(0),e.data)}';
@@ -875,11 +905,22 @@
     await sleep(200);
     await api.selftest('shot', 'Settings Keys.png');
     closeModal();
+    // Frameless window: zoom fills the work area and comes back to the same bounds.
+    const b0 = await api.selftest('bounds');
+    await api.selftest('zoom');
+    await sleep(350);
+    const b1 = await api.selftest('bounds');
+    await api.selftest('shot', 'Zoomed.png');
+    await api.selftest('zoom');
+    await sleep(350);
+    const b2 = await api.selftest('bounds');
+    const same = (a, b) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+    const winTest = { zoomFillsWorkArea: same(b1, b1.work), restoresExactly: same(b0, b2), maxClass: b1.zoomed };
     setVcam(true); // the fake cam goes out as the PC webcam for the length of the take
     await sleep(300);
     await api.selftest('hudshot', 'Status Box.png');
     afterState = (state, extra) => {
-      if (state === 'idle' && (extra.result || extra.error)) api.selftest('done', extra.result || extra);
+      if (state === 'idle' && (extra.result || extra.error)) api.selftest('done', { ...(extra.result || extra), window: winTest });
     };
     toggleRec();
     await sleep(2000);

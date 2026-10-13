@@ -347,7 +347,7 @@ const Scene = (() => {
       octx.fillText(s.type === 'phone' ? 'Waiting for phone' : 'Source offline', s.x + s.w / 2, s.y + s.h / 2);
       octx.restore();
     }
-    octx.strokeStyle = '#ff4a3d';
+    octx.strokeStyle = '#ffcc00'; // alignment guides
     octx.lineWidth = 1 * k;
     for (const g of guides) {
       octx.beginPath();
@@ -358,7 +358,7 @@ const Scene = (() => {
     const s = selected();
     if (!s) return;
     const cropping = cropId === s.id && natural(s);
-    const color = cropping ? '#ffb020' : '#ff4a3d';
+    const color = cropping ? '#ffcc00' : '#0a84ff'; // crop window is yellow, selection is the accent blue
     if (cropping) {
       // Ghost of the whole source, so you can see what the crop is hiding.
       const f = extents(s);

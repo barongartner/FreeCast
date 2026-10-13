@@ -6,6 +6,10 @@ const on = (channel) => (fn) => ipcRenderer.on(channel, (_e, data) => fn(data));
 contextBridge.exposeInMainWorld('api', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
+  windowCommand: (cmd) => ipcRenderer.send('win:command', cmd),
+  resizeStart: (edge) => ipcRenderer.send('win:resize-start', edge),
+  resizeEnd: () => ipcRenderer.send('win:resize-end'),
+  onWindowState: on('win:state'),
   flushSettings: (patch) => ipcRenderer.sendSync('settings:flush', patch),
   log: (kind, detail) => ipcRenderer.send('log', kind, detail),
   listSources: () => ipcRenderer.invoke('sources:list'),
