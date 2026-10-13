@@ -1,6 +1,6 @@
 # Settings that would not stick, more options, the Apple look - Monday Oct 12
 
-*Time worked: 3h 6m (5:26 PM to 8:32 PM)*
+*Time worked: 3h 8m (5:26 PM to 8:34 PM)*
 
 ## Timeline
 
@@ -137,10 +137,23 @@ Checked by capturing a debug copy with switches forced into each state (on, on a
 off and pressed) and comparing the enlarged crop with his screenshot. `FREECAST_SHOT_JS` was
 added for that: a line of script to run in the page before `FREECAST_SHOT` takes its picture.
 
+**8:34 PM - "Open it."**
+Opened, and the first-run migration worked. The catch from earlier was that a launch from a
+Claude session would migrate the stale redirected settings. Way round it: hand the launcher to
+the running Explorer (`cmd //c explorer "...\Start FreeCast.cmd"`), so the app starts outside
+the Claude package. Proof it did: the settings that landed in `~\.freecast` differ from the copy
+my shell can see (status box "always" and one source, Screen 2, against "recording" and Screen 1
+plus Phone Camera), so they came from his real profile. Phone server is listening, log is empty.
+
+Consequence: what he had set up only in copies I launched (status box shown only while
+recording, the phone camera source and its show/hide key) did not come across. The phone source
+comes back on its own when the phone connects.
+
 ## Decisions
 
 | Decision | Rationale |
 |---|---|
+| Launch for Baron through Explorer, not straight from the shell | A direct launch runs inside the Claude package and sees the wrong AppData |
 | Switches follow the kit's Toggle page exactly, not Photo Larp's | He sent the page and said to follow it |
 | No colour gradient behind the glass | Baron's call, the same evening it went in |
 | Window radius 34, panels 24 at a 10 px inset | Concentric corners; 34 is the kit's window radius |
